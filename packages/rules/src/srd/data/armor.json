@@ -1,0 +1,15 @@
+[
+{"id":"breastplate","name":"Breastplate","category":"medium","baseAc":14,"dexBonus":true,"maxDex":2,"weight":20,"cost":"400 gp"},
+{"id":"chain-mail","name":"Chain Mail","category":"heavy","baseAc":16,"dexBonus":false,"strength":13,"stealthDisadvantage":true,"weight":55,"cost":"75 gp"},
+{"id":"chain-shirt","name":"Chain Shirt","category":"medium","baseAc":13,"dexBonus":true,"maxDex":2,"weight":14,"cost":"50 gp"},
+{"id":"half-plate-armor","name":"Half-Plate Armor","category":"medium","baseAc":15,"dexBonus":true,"maxDex":2,"stealthDisadvantage":true,"weight":40,"cost":"750 gp"},
+{"id":"hide-armor","name":"Hide Armor","category":"light","baseAc":12,"dexBonus":true,"maxDex":2,"weight":12,"cost":"10 gp"},
+{"id":"leather-armor","name":"Leather Armor","category":"light","baseAc":11,"dexBonus":true,"weight":10,"cost":"10 gp"},
+{"id":"padded-armor","name":"Padded Armor","category":"light","baseAc":11,"dexBonus":true,"stealthDisadvantage":true,"weight":8,"cost":"5 gp"},
+{"id":"plate-armor","name":"Plate Armor","category":"heavy","baseAc":18,"dexBonus":false,"strength":15,"stealthDisadvantage":true,"weight":65,"cost":"1500 gp"},
+{"id":"ring-mail","name":"Ring Mail","category":"heavy","baseAc":14,"dexBonus":false,"stealthDisadvantage":true,"weight":40,"cost":"30 gp"},
+{"id":"scale-mail","name":"Scale Mail","category":"medium","baseAc":14,"dexBonus":true,"maxDex":2,"stealthDisadvantage":true,"weight":45,"cost":"50 gp"},
+{"id":"shield","name":"Shield","category":"shield","baseAc":2,"dexBonus":false,"weight":6,"cost":"10 gp"},
+{"id":"splint-armor","name":"Splint Armor","category":"heavy","baseAc":17,"dexBonus":false,"strength":15,"stealthDisadvantage":true,"weight":60,"cost":"200 gp"},
+{"id":"studded-leather-armor","name":"Studded Leather Armor","category":"light","baseAc":12,"dexBonus":true,"weight":13,"cost":"45 gp"}
+]

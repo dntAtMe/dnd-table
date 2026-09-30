@@ -1,0 +1,21 @@
+{
+  "source": "https://github.com/5e-bits/5e-database",
+  "commit": "bce51b3958573819e3b842fbc0cd9524fe4bc2e1",
+  "dataset": "src/2024/en (SRD 5.2)",
+  "license": "This work includes material from the System Reference Document 5.2 (\"SRD 5.2\") by Wizards of the Coast LLC, available at https://www.dndbeyond.com/srd. The SRD 5.2 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.",
+  "files": {
+    "classes": 12,
+    "features": 232,
+    "subclasses": 12,
+    "species": 9,
+    "subspecies": 24,
+    "traits": 67,
+    "backgrounds": 4,
+    "feats": 17,
+    "weapons": 38,
+    "armor": 13,
+    "gear": 131,
+    "spells": 339,
+    "rules": 4
+  }
+}

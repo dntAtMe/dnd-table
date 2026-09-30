@@ -1,0 +1,11 @@
+[
+{"id":"dragonborn","name":"Dragonborn","sizes":["Medium"],"speed":30,"traits":["darkvision-60","draconic-flight"],"subspecies":["draconic-ancestor-black","draconic-ancestor-blue","draconic-ancestor-brass","draconic-ancestor-bronze","draconic-ancestor-copper","draconic-ancestor-gold","draconic-ancestor-green","draconic-ancestor-red","draconic-ancestor-silver","draconic-ancestor-white"]},
+{"id":"dwarf","name":"Dwarf","sizes":["Medium"],"speed":30,"traits":["darkvision-120","dwarven-resilience","dwarven-toughness","stonecunning"]},
+{"id":"elf","name":"Elf","sizes":["Medium"],"speed":30,"traits":["darkvision-60","elven-lineage","fey-ancestry","keen-senses","trance"],"subspecies":["elven-lineage-drow","elven-lineage-high-elf","elven-lineage-wood-elf"]},
+{"id":"gnome","name":"Gnome","sizes":["Small"],"speed":30,"traits":["darkvision-60","gnomish-cunning","gnomish-lineage"],"subspecies":["gnomish-lineage-forest-gnome","gnomish-lineage-rock-gnome"]},
+{"id":"goliath","name":"Goliath","sizes":["Medium"],"speed":35,"traits":["giant-ancestry","large-form","powerful-build"],"subspecies":["giant-ancestry-clouds-jaunt","giant-ancestry-fires-burn","giant-ancestry-frosts-chill","giant-ancestry-hills-tumble","giant-ancestry-stones-endurance","giant-ancestry-storms-thunder"]},
+{"id":"halfling","name":"Halfling","sizes":["Small"],"speed":30,"traits":["brave","halfling-nimbleness","luck","naturally-stealthy"]},
+{"id":"human","name":"Human","sizes":["Medium"],"speed":30,"traits":["resourceful","skillful","versatile"]},
+{"id":"orc","name":"Orc","sizes":["Medium"],"speed":30,"traits":["adrenaline-rush","darkvision-120","relentless-endurance"]},
+{"id":"tiefling","name":"Tiefling","sizes":["Small","Medium"],"speed":30,"traits":["darkvision-60","fiendish-legacy","otherworldly-presence"],"subspecies":["fiendish-legacy-abyssal","fiendish-legacy-chthonic","fiendish-legacy-infernal"]}
+]
