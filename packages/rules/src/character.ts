@@ -497,7 +497,8 @@ export function computeCharacter(c: Character): DerivedCharacter {
     ability: unarmedAbility,
     proficient: true,
     attackBonus: mods[unarmedAbility] + pb,
-    damage: withMod(unarmedDie, mods[unarmedAbility]),
+    // Without Martial Arts an Unarmed Strike deals a flat 1 + STR modifier.
+    damage: def.id === 'monk' ? withMod(unarmedDie, mods[unarmedAbility]) : String(Math.max(0, 1 + mods.str)),
     damageType: 'bludgeoning',
     properties: [],
     range: '5 ft',
