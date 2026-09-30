@@ -1,0 +1,427 @@
+#!/usr/bin/env node
+// Imports SRD 5.2 (D&D 2024) reference data from 5e-bits/5e-database at a pinned commit and
+// writes compact, normalised JSON to packages/rules/src/srd/data. Same commit → same output.
+//
+//   node scripts/import-srd.mjs              # fetch from GitHub at the pinned commit
+//   node scripts/import-srd.mjs --cache DIR  # read/write raw files in DIR (offline re-runs)
+//
+// To update: change COMMIT, re-run, review the diff.
+
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const REPO = '5e-bits/5e-database';
+const COMMIT = 'bce51b3958573819e3b842fbc0cd9524fe4bc2e1';
+const OUT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../packages/rules/src/srd/data');
+
+const FILES = [
+  'Backgrounds',
+  'Classes',
+  'Conditions',
+  'Equipment',
+  'Feats',
+  'Features',
+  'Levels',
+  'Proficiencies',
+  'Skills',
+  'Species',
+  'Spells',
+  'Subclasses',
+  'Subspecies',
+  'Traits',
+  'Weapon-Mastery-Properties',
+  'Weapon-Properties',
+];
+
+// ---------- fetching ----------
+
+const cacheArg = process.argv.indexOf('--cache');
+const cacheDir = cacheArg > 0 ? path.resolve(process.argv[cacheArg + 1]) : null;
+
+async function load(name) {
+  const file = `5e-SRD-${name}.json`;
+  if (cacheDir && existsSync(path.join(cacheDir, file))) return JSON.parse(readFileSync(path.join(cacheDir, file), 'utf8'));
+  const url = `https://raw.githubusercontent.com/${REPO}/${COMMIT}/src/2024/en/${file}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+  const text = await res.text();
+  if (cacheDir) {
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(path.join(cacheDir, file), text);
+  }
+  return JSON.parse(text);
+}
+
+// ---------- text clean-up ----------
+
+// Windows-1252 code points 0x80–0x9F, for undoing UTF-8 text that was decoded as cp1252.
+const CP1252 = {
+  0x20ac: 0x80, 0x201a: 0x82, 0x0192: 0x83, 0x201e: 0x84, 0x2026: 0x85, 0x2020: 0x86, 0x2021: 0x87, 0x02c6: 0x88,
+  0x2030: 0x89, 0x0160: 0x8a, 0x2039: 0x8b, 0x0152: 0x8c, 0x017d: 0x8e, 0x2018: 0x91, 0x2019: 0x92, 0x201c: 0x93,
+  0x201d: 0x94, 0x2022: 0x95, 0x2013: 0x96, 0x2014: 0x97, 0x02dc: 0x98, 0x2122: 0x99, 0x0161: 0x9a, 0x203a: 0x9b,
+  0x0153: 0x9c, 0x017e: 0x9e, 0x0178: 0x9f,
+};
+
+function fixMojibake(s) {
+  if (!/[Â-ô][\u0080-¿ -™Œ-ƒˆ˜]/.test(s)) return s;
+  return s.replace(/[Â-ô][\u0080-¿ -™Œ-ƒˆ˜]{1,3}/g, (seq) => {
+    const bytes = [...seq].map((ch) => {
+      const code = ch.codePointAt(0);
+      return code <= 0xff ? code : (CP1252[code] ?? 0x3f);
+    });
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(bytes));
+    } catch {
+      return seq;
+    }
+  });
+}
+
+let vocabulary = new Set();
+
+function buildVocabulary(texts) {
+  const words = new Set();
+  for (const t of texts) for (const w of fixMojibake(t).toLowerCase().match(/[a-z]+(?:-[a-z]+)*/g) ?? []) words.add(w);
+  vocabulary = words;
+}
+
+/** Re-joins words split across PDF lines ("ex- pended"), keeping real hyphens ("two- handed" → "two-handed"). */
+function dehyphenate(s) {
+  return s.replace(/([A-Za-z]+)- ([a-z]+)/g, (_, a, b) => {
+    const joined = (a + b).toLowerCase();
+    const hyphenated = `${a}-${b}`.toLowerCase();
+    if (vocabulary.has(hyphenated) && !vocabulary.has(joined)) return `${a}-${b}`;
+    return a + b;
+  });
+}
+
+function clean(s) {
+  if (s == null) return undefined;
+  const text = Array.isArray(s) ? s.join('\n') : String(s);
+  return dehyphenate(fixMojibake(text))
+    .replace(/\r/g, '')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .trim();
+}
+
+// ---------- helpers ----------
+
+const byIndex = (list) => Object.fromEntries(list.map((x) => [x.index, x]));
+const camel = (s) => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+const skillId = (profIndex) => camel(profIndex.replace(/^skill-/, ''));
+const compact = (obj) => Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined && v !== null));
+
+function refs(options) {
+  return (options?.from?.options ?? []).flatMap((o) => (o.item ? [o.item.index] : o.of ? [o.of.index] : []));
+}
+
+/** One entry per line: small diffs, still valid JSON. */
+function writeJson(name, data) {
+  const body = Array.isArray(data)
+    ? `[\n${data.map((x) => JSON.stringify(x)).join(',\n')}\n]\n`
+    : `${JSON.stringify(data, null, 2)}\n`;
+  writeFileSync(path.join(OUT, `${name}.json`), body);
+  return { name, entries: Array.isArray(data) ? data.length : Object.keys(data).length };
+}
+
+function assert(cond, message) {
+  if (!cond) throw new Error(`SRD import check failed: ${message}`);
+}
+
+// Known gaps in the source data, fixed here so they're visible and reviewable.
+const PATCHES = {
+  /** SRD 5.2: the Sage background grants Magic Initiate (Wizard). */
+  backgroundFeatNotes: { sage: 'Wizard' },
+};
+
+// ---------- main ----------
+
+const raw = Object.fromEntries(await Promise.all(FILES.map(async (f) => [f, await load(f)])));
+
+buildVocabulary(
+  [
+    ...raw.Spells.flatMap((s) => [s.description, ...(s.higher_level ?? [])]),
+    ...raw.Features.map((f) => f.description),
+    ...raw.Traits.map((t) => t.description),
+    ...raw.Feats.map((f) => f.description),
+    ...raw.Subclasses.flatMap((s) => [s.description, ...s.features.map((f) => f.description)]),
+  ].filter(Boolean),
+);
+
+const proficiencies = byIndex(raw.Proficiencies);
+const equipmentByIndex = byIndex(raw.Equipment);
+
+// Weapons & armor
+const hasCat = (e, c) => e.equipment_categories?.some((x) => x.index === c);
+const weapons = raw.Equipment.filter((e) => hasCat(e, 'weapons') && e.damage).map((e) =>
+  compact({
+    id: e.index,
+    name: e.name,
+    category: hasCat(e, 'martial-weapons') ? 'martial' : 'simple',
+    ranged: hasCat(e, 'ranged-weapons'),
+    damage: e.damage.damage_dice,
+    damageType: e.damage.damage_type.index,
+    properties: (e.properties ?? []).map((p) => p.index).sort(),
+    versatile: e.two_handed_damage?.damage_dice,
+    range: e.throw_range ? [e.throw_range.normal, e.throw_range.long] : e.range?.long ? [e.range.normal, e.range.long] : undefined,
+    mastery: e.mastery?.index,
+    weight: e.weight,
+    cost: e.cost ? `${e.cost.quantity} ${e.cost.unit}` : undefined,
+  }),
+);
+assert(weapons.length >= 38, `expected ≥38 weapons, got ${weapons.length}`);
+assert(weapons.every((w) => w.mastery), 'every weapon has a mastery');
+const weaponIds = new Set(weapons.map((w) => w.id));
+
+const armor = raw.Equipment.filter((e) => hasCat(e, 'armor')).map((e) =>
+  compact({
+    id: e.index,
+    name: e.name,
+    category: hasCat(e, 'shields') ? 'shield' : hasCat(e, 'heavy-armor') ? 'heavy' : hasCat(e, 'medium-armor') ? 'medium' : 'light',
+    baseAc: e.armor_class.base,
+    dexBonus: e.armor_class.dex_bonus,
+    maxDex: e.armor_class.dex_bonus ? (e.armor_class.max_bonus ?? undefined) : undefined,
+    strength: e.str_minimum || undefined,
+    stealthDisadvantage: e.stealth_disadvantage || undefined,
+    weight: e.weight,
+    cost: e.cost ? `${e.cost.quantity} ${e.cost.unit}` : undefined,
+  }),
+);
+assert(armor.some((a) => a.id === 'shield') && armor.length >= 13, 'armor list incomplete');
+
+const gear = raw.Equipment.filter((e) => !hasCat(e, 'weapons') && !hasCat(e, 'armor')).map((e) =>
+  compact({
+    id: e.index,
+    name: e.name,
+    category: (e.equipment_categories ?? []).map((c) => c.index).filter((c) => c !== 'tools')[0],
+    weight: e.weight,
+    cost: e.cost ? `${e.cost.quantity} ${e.cost.unit}` : undefined,
+    description: clean(e.description ?? e.desc),
+  }),
+);
+
+// Proficiency → structured grant
+function weaponGrant(index) {
+  if (index === 'simple-weapons') return { category: 'simple' };
+  if (index === 'martial-weapons') return { category: 'martial' };
+  const single = index.replace(/s$/, '');
+  if (weaponIds.has(single)) return { weapon: single };
+  return null;
+}
+
+const toolName = (index) => proficiencies[index]?.name?.replace(/^Tool: /, '') ?? index;
+
+// Classes
+const levelsByClass = {};
+for (const l of raw.Levels) {
+  if (l.subclass) continue;
+  (levelsByClass[l.class.index] ??= []).push(l);
+}
+
+const classes = raw.Classes.map((c) => {
+  const armorTraining = new Set();
+  const weaponTraining = { categories: [], weapons: [] };
+  const tools = [];
+  for (const p of c.proficiencies) {
+    const i = p.index;
+    if (i.startsWith('saving-throw-')) continue;
+    if (i === 'all-armor') ['light', 'medium', 'heavy'].forEach((a) => armorTraining.add(a));
+    else if (i.endsWith('-armor')) armorTraining.add(i.replace('-armor', ''));
+    else if (i === 'shields') armorTraining.add('shield');
+    else {
+      const w = weaponGrant(i);
+      if (w?.category) weaponTraining.categories.push(w.category);
+      else if (w?.weapon) weaponTraining.weapons.push(w.weapon);
+      else tools.push(toolName(i));
+    }
+  }
+  const skillChoice = c.proficiency_choices.find((pc) => refs(pc).some((r) => r.startsWith('skill-')));
+  const otherChoices = c.proficiency_choices.filter((pc) => pc !== skillChoice).map((pc) => clean(pc.desc));
+  const levels = (levelsByClass[c.index] ?? [])
+    .sort((a, b) => a.level - b.level)
+    .map((l) =>
+      compact({
+        level: l.level,
+        profBonus: l.prof_bonus,
+        features: (l.features ?? []).map((f) => f.index),
+        classSpecific: l.class_specific && Object.keys(l.class_specific).length ? l.class_specific : undefined,
+        spellcasting: l.spellcasting
+          ? {
+              cantrips: l.spellcasting.cantrips_known ?? 0,
+              prepared: l.spellcasting.prepared_spells ?? 0,
+              slots: Array.from({ length: 9 }, (_, i) => l.spellcasting[`spell_slots_level_${i + 1}`] ?? 0),
+            }
+          : undefined,
+      }),
+    );
+  assert(levels.length === 20, `${c.index} has ${levels.length} levels`);
+  return compact({
+    id: c.index,
+    name: c.name,
+    hitDie: c.hit_die,
+    // "Strength and Charisma" lists all; "Strength or Dexterity" (Fighter) is a choice.
+    primaryAbilities: c.primary_ability.ability_scores?.map((a) => a.index) ?? refs(c.primary_ability.ability_score_options),
+    primaryAbilityChoice: c.primary_ability.ability_score_options ? true : undefined,
+    savingThrows: c.saving_throws.map((s) => s.index),
+    skillChoice: skillChoice && {
+      choose: skillChoice.choose,
+      from: refs(skillChoice).filter((r) => r.startsWith('skill-')).map(skillId),
+    },
+    otherProficiencyChoices: otherChoices.length ? otherChoices : undefined,
+    armorTraining: [...armorTraining],
+    weaponTraining,
+    tools: tools.length ? tools : undefined,
+    spellcasting: c.spellcasting
+      ? { ability: c.spellcasting.spellcasting_ability.index, pact: c.index === 'warlock' }
+      : undefined,
+    startingEquipment: (c.starting_equipment_options ?? []).map((o) => clean(o.desc)),
+    subclasses: c.subclasses.map((s) => s.index),
+    multiclassPrerequisites: c.multi_classing?.prerequisites?.map((p) => ({ ability: p.ability_score.index, minimum: p.minimum_score })),
+    levels,
+  });
+});
+assert(classes.length === 12, 'expected 12 classes');
+// "Choose any 3 skills" (Bard) has no option list; it means any skill.
+for (const c of classes) if (c.skillChoice && c.skillChoice.from.length === 0) c.skillChoice.from = 'any';
+
+const features = raw.Features.map((f) =>
+  compact({ id: f.index, classId: f.class.index, level: Number(f.level.index.split('-').pop()), name: f.name, description: clean(f.description) }),
+);
+const featureIds = new Set(features.map((f) => f.id));
+for (const c of classes) for (const l of c.levels) for (const f of l.features) assert(featureIds.has(f), `missing feature ${f}`);
+
+const subclasses = raw.Subclasses.map((s) => ({
+  id: s.index,
+  classId: s.class.index,
+  name: s.name,
+  summary: clean(s.summary),
+  description: clean(s.description),
+  features: s.features.map((f) => ({ level: f.level, name: f.name, description: clean(f.description) })),
+}));
+
+// Species
+const traits = raw.Traits.map((t) =>
+  compact({
+    id: t.index,
+    name: t.name,
+    description: clean(t.description),
+    speed: t.speed,
+    skillChoice: t.proficiency_choices
+      ? { choose: t.proficiency_choices.choose, from: refs(t.proficiency_choices).filter((r) => r.startsWith('skill-')).map(skillId) }
+      : undefined,
+    spells: t.spells?.map((s) => s.index ?? s.spell?.index).filter(Boolean),
+  }),
+);
+
+const species = raw.Species.map((s) =>
+  compact({
+    id: s.index,
+    name: s.name,
+    sizes: s.size ? [s.size] : (s.size_options?.from?.options ?? []).map((o) => o.size),
+    speed: s.speed,
+    traits: s.traits.map((t) => t.index),
+    subspecies: s.subspecies?.map((x) => x.index),
+  }),
+);
+assert(species.length === 9, 'expected 9 species');
+
+const subspecies = raw.Subspecies.map((s) =>
+  compact({
+    id: s.index,
+    speciesId: s.species.index,
+    name: s.name,
+    damageType: s.damage_type?.index,
+    traits: s.traits.map((t) => compact({ id: t.index, level: t.level })),
+  }),
+);
+
+// Backgrounds & feats
+const backgrounds = raw.Backgrounds.map((b) => {
+  const skills = b.proficiencies.filter((p) => p.index.startsWith('skill-')).map((p) => skillId(p.index));
+  const tools = b.proficiencies.filter((p) => !p.index.startsWith('skill-')).map((p) => toolName(p.index));
+  return compact({
+    id: b.index,
+    name: b.name,
+    abilities: b.ability_scores.map((a) => a.index),
+    feat: compact({ id: b.feat.index, note: b.feat.note ?? PATCHES.backgroundFeatNotes[b.index] }),
+    skills,
+    tools: tools.length ? tools : undefined,
+    toolChoice: b.proficiency_choices?.map((pc) => clean(pc.desc)).join('; '),
+    equipment: (b.equipment_options ?? []).map((o) => clean(o.desc)),
+  });
+});
+
+const feats = raw.Feats.map((f) =>
+  compact({
+    id: f.index,
+    name: f.name,
+    type: f.type,
+    description: clean(f.description),
+    repeatable: f.repeatable ? true : undefined,
+    minLevel: f.prerequisites?.minimum_level,
+    prerequisite: f.prerequisite_options?.desc ?? f.prerequisites?.feature_named,
+  }),
+);
+
+// Spells
+const spells = raw.Spells.map((s) =>
+  compact({
+    id: s.index,
+    name: s.name,
+    level: s.level,
+    school: s.school.index,
+    classes: s.classes.map((c) => c.index).sort(),
+    castingTime: s.casting_time,
+    ritual: s.ritual || undefined,
+    range: s.range,
+    components: s.components,
+    material: clean(s.material),
+    duration: s.duration,
+    concentration: s.concentration || undefined,
+    attack: s.attack_type,
+    damageType: s.damage?.damage_type?.index,
+    damageAtSlot: s.damage?.damage_at_slot_level,
+    damageAtCharacterLevel: s.damage?.damage_at_character_level,
+    description: clean(s.description),
+    higherLevel: clean(s.higher_level),
+  }),
+).sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
+assert(spells.length > 300, `only ${spells.length} spells`);
+
+// Reference text
+const rules = {
+  conditions: Object.fromEntries(raw.Conditions.map((c) => [c.index, { name: c.name, description: clean(c.description ?? c.desc) }])),
+  masteries: Object.fromEntries(raw['Weapon-Mastery-Properties'].map((m) => [m.index, { name: m.name, description: clean(m.description ?? m.desc) }])),
+  weaponProperties: Object.fromEntries(raw['Weapon-Properties'].map((p) => [p.index, { name: p.name, description: clean(p.description ?? p.desc) }])),
+  skills: Object.fromEntries(raw.Skills.map((s) => [camel(s.index), { name: s.name, ability: s.ability_score.index, description: clean(s.description ?? s.desc) }])),
+};
+
+mkdirSync(OUT, { recursive: true });
+const written = [
+  writeJson('classes', classes),
+  writeJson('features', features),
+  writeJson('subclasses', subclasses),
+  writeJson('species', species),
+  writeJson('subspecies', subspecies),
+  writeJson('traits', traits),
+  writeJson('backgrounds', backgrounds),
+  writeJson('feats', feats),
+  writeJson('weapons', weapons),
+  writeJson('armor', armor),
+  writeJson('gear', gear),
+  writeJson('spells', spells),
+  writeJson('rules', rules),
+];
+writeJson('manifest', {
+  source: `https://github.com/${REPO}`,
+  commit: COMMIT,
+  dataset: 'src/2024/en (SRD 5.2)',
+  license:
+    'This work includes material from the System Reference Document 5.2 ("SRD 5.2") by Wizards of the Coast LLC, available at https://www.dndbeyond.com/srd. The SRD 5.2 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.',
+  files: Object.fromEntries(written.map((w) => [w.name, w.entries])),
+});
+
+for (const w of written) console.log(`${w.name.padEnd(12)} ${w.entries}`);
+console.log(`\nSRD 5.2 data from ${REPO}@${COMMIT.slice(0, 7)} → ${path.relative(process.cwd(), OUT)}`);

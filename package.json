@@ -8,7 +8,8 @@
     "build": "pnpm --filter @dnd/web run build",
     "start": "pnpm --filter @dnd/server run start",
     "test": "pnpm -r run test",
-    "typecheck": "pnpm -r run typecheck"
+    "typecheck": "pnpm -r run typecheck",
+    "import:srd": "node scripts/import-srd.mjs"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
