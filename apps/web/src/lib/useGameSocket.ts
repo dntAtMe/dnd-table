@@ -66,6 +66,8 @@ function reducer(state: GameState, action: Action): GameState {
           return { ...state, error: { message: msg.message, nonce: Date.now() } };
         case 'display:unpaired':
           return { ...initial, status: 'open', unpairedCode: msg.code };
+        default:
+          return state;
       }
     }
   }

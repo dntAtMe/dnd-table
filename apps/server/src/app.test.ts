@@ -306,3 +306,116 @@ describe('uploads', () => {
     expect(notImage.status).toBe(415);
   });
 });
+
+describe('scenes and tokens', () => {
+  async function table() {
+    const { gm, player, campaignId } = await campaignWithPlayer();
+    const gmSock = await gm.socket(`campaign=${campaignId}`);
+    const hello = await gmSock.until('hello');
+    expect(hello.scene).toBeNull();
+    expect(hello.scenes).toEqual([]);
+    await player.call('POST', '/api/campaigns/join', { inviteCode: hello.campaign.inviteCode });
+    const { data: me } = await player.call('GET', '/api/auth/me');
+    const playerSock = await player.socket(`campaign=${campaignId}`);
+    expect((await playerSock.until('hello')).scene).toBeNull();
+
+    // A blank 10×8 scene with 50px cells.
+    gmSock.send({ type: 'scene:create', name: 'Cave', fileId: null, width: 500, height: 400, grid: { size: 50 } });
+    const { scenes } = await gmSock.until('scenes');
+    const sceneId = scenes[0]!.id;
+    expect((await gmSock.until('scene')).scene).toMatchObject({ id: sceneId, name: 'Cave', grid: { size: 50 } });
+    return { gm, player, campaignId, gmSock, playerSock, sceneId, playerId: me.user.id as string };
+  }
+
+  it('only shows players the active scene', async () => {
+    const { gmSock, playerSock, sceneId } = await table();
+    // Creating a scene doesn't show it to players.
+    playerSock.send({ type: 'ping', sceneId, x: 1, y: 1 });
+    gmSock.send({ type: 'scene:activate', sceneId });
+    const shown = await playerSock.until('scene', (m) => m.scene !== null);
+    expect(shown.scene).toMatchObject({ id: sceneId, width: 500, height: 400 });
+    expect(await gmSock.until('scenes')).toMatchObject({ activeSceneId: sceneId });
+
+    gmSock.send({ type: 'scene:activate', sceneId: null });
+    expect((await playerSock.until('scene')).scene).toBeNull();
+  });
+
+  it('filters hidden and fogged tokens and lets players move only their own', async () => {
+    const { gmSock, playerSock, sceneId, playerId } = await table();
+    gmSock.send({ type: 'scene:activate', sceneId });
+    await playerSock.until('scene', (m) => m.scene !== null);
+
+    gmSock.send({ type: 'token:create', sceneId, name: 'Ana', color: '#3366ff', col: 1, row: 1, ownerUserId: playerId });
+    gmSock.send({ type: 'token:create', sceneId, name: 'Goblin', color: '#44aa44', col: 5, row: 5 });
+    gmSock.send({ type: 'token:create', sceneId, name: 'Lurker', color: '#aa4444', col: 3, row: 3, hidden: true });
+    const gmView = await gmSock.until('scene', (m) => m.scene?.tokens.length === 3);
+    let view = await playerSock.until('scene', (m) => m.scene?.tokens.length === 2);
+    expect(view.scene!.tokens.map((t) => t.name)).toEqual(['Ana', 'Goblin']);
+
+    // Fog on: only the player's own token stays visible until the GM reveals the goblin's cell.
+    gmSock.send({ type: 'scene:update', sceneId, fogEnabled: true });
+    view = await playerSock.until('scene', (m) => m.scene?.fogEnabled === true);
+    expect(view.scene!.tokens.map((t) => t.name)).toEqual(['Ana']);
+    gmSock.send({ type: 'fog:paint', sceneId, cells: [5 * 10 + 5], reveal: true });
+    view = await playerSock.until('scene', (m) => m.scene?.tokens.length === 2);
+    expect(view.scene!.tokens.map((t) => t.name)).toEqual(['Ana', 'Goblin']);
+
+    const ana = gmView.scene!.tokens.find((t) => t.name === 'Ana')!;
+    const goblin = gmView.scene!.tokens.find((t) => t.name === 'Goblin')!;
+    playerSock.send({ type: 'token:move', tokenId: goblin.id, col: 0, row: 0 });
+    expect(await playerSock.until('error')).toMatchObject({ message: "That's not your token" });
+    // Moves are clamped to the grid.
+    playerSock.send({ type: 'token:move', tokenId: ana.id, col: 99, row: 2 });
+    const moved = await gmSock.until('scene', (m) => m.scene?.tokens.some((t) => t.id === ana.id && t.col === 9) ?? false);
+    expect(moved.scene!.tokens.find((t) => t.id === ana.id)).toMatchObject({ col: 9, row: 2 });
+
+    playerSock.send({ type: 'token:delete', tokenId: ana.id });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'Only the GM can do that' });
+  });
+
+  it('resets fog and clamps tokens when the grid changes size', async () => {
+    const { gmSock, sceneId } = await table();
+    gmSock.send({ type: 'token:create', sceneId, name: 'Ogre', color: '#aa7744', col: 8, row: 6, size: 2 });
+    gmSock.send({ type: 'scene:update', sceneId, fogEnabled: true });
+    gmSock.send({ type: 'fog:fill', sceneId, reveal: true });
+    await gmSock.until('scene', (m) => m.scene?.fog.startsWith('/////') ?? false);
+    gmSock.send({ type: 'scene:update', sceneId, grid: { size: 100 } });
+    const { scene } = await gmSock.until('scene', (m) => m.scene?.grid.size === 100);
+    expect(scene!.tokens[0]).toMatchObject({ col: 3, row: 2 });
+    expect(scene!.fog).toMatch(/^A+=*$/); // every cell fogged again
+
+    gmSock.send({ type: 'scene:update', sceneId, grid: { size: 1 } });
+    expect(await gmSock.until('error')).toMatchObject({ type: 'error' });
+  });
+
+  it('relays pings to viewers and the GM camera to table screens', async () => {
+    const { gm, gmSock, playerSock, campaignId, sceneId } = await table();
+    gmSock.send({ type: 'scene:activate', sceneId });
+    await playerSock.until('scene', (m) => m.scene !== null);
+
+    playerSock.send({ type: 'ping', sceneId, x: 120, y: 80 });
+    expect(await gmSock.until('ping')).toMatchObject({ x: 120, y: 80, name: 'Ana', role: 'player' });
+
+    const rect = { x: 0, y: 0, w: 250, h: 200 };
+    gmSock.send({ type: 'camera', sceneId, rect });
+    const { data: display } = await new Client().call('POST', '/api/displays');
+    const tv = await Sock.open(`ws://${base}/ws?display=${display.token}`, '');
+    await tv.until('display:unpaired');
+    await gm.call('POST', `/api/campaigns/${campaignId}/displays`, { code: display.code });
+    expect((await tv.until('hello')).scene).toMatchObject({ id: sceneId });
+    expect(await tv.until('camera')).toEqual({ type: 'camera', sceneId, rect });
+  });
+
+  it('checks that map images belong to the campaign', async () => {
+    const { gm, gmSock, campaignId } = await table();
+    const { data: other } = await gm.call('POST', '/api/campaigns', { name: 'Other' });
+    const { data: file } = await gm.call('POST', `/api/campaigns/${other.id}/files`, new Uint8Array(PNG));
+    gmSock.send({ type: 'scene:create', name: 'Stolen', fileId: file.id, width: 100, height: 100 });
+    expect(await gmSock.until('error')).toMatchObject({ message: 'Map image not found' });
+
+    const { data: mine } = await gm.call('POST', `/api/campaigns/${campaignId}/files`, new Uint8Array(PNG));
+    gmSock.send({ type: 'scene:create', name: 'Mine', fileId: mine.id, width: 100, height: 100 });
+    const { scenes } = await gmSock.until('scenes', (m) => m.scenes.length === 2);
+    expect(scenes[1]).toMatchObject({ name: 'Mine', imageUrl: mine.url });
+  });
+});

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { CampaignSummary, LogEntry, Role, User, Visibility } from '@dnd/protocol';
+import type { CampaignSummary, LogEntry, Role, SceneSummary, Token, User, Visibility } from '@dnd/protocol';
+import type { Grid } from '@dnd/rules';
 import type { DB } from './db';
 import { hashToken, newToken, randomCode } from './security';
 
@@ -31,6 +32,16 @@ export interface StoredFile {
   filename: string;
   mime: string;
   bytes: number;
+}
+
+/** A scene as stored: the unfiltered source for every client's SceneView. */
+export interface SceneRecord extends SceneSummary {
+  campaignId: string;
+  width: number;
+  height: number;
+  grid: Grid;
+  fogEnabled: boolean;
+  fog: string;
 }
 
 type Row = Record<string, unknown>;
@@ -260,6 +271,127 @@ export class Store {
     );
   }
 
+  // ---------- scenes ----------
+
+  private static toScene(row: Row): SceneRecord {
+    return {
+      id: row.id as string,
+      campaignId: row.campaign_id as string,
+      name: row.name as string,
+      imageUrl: row.filename ? `/files/${row.filename as string}` : null,
+      width: Number(row.width),
+      height: Number(row.height),
+      grid: JSON.parse(row.grid as string) as Grid,
+      fogEnabled: Boolean(row.fog_enabled),
+      fog: row.fog as string,
+    };
+  }
+
+  createScene(scene: Omit<SceneRecord, 'id' | 'imageUrl'> & { fileId: string | null }): string {
+    const id = randomUUID();
+    this.db
+      .prepare(
+        `INSERT INTO scenes (id, campaign_id, name, file_id, width, height, grid, fog_enabled, fog)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        scene.campaignId,
+        scene.name,
+        scene.fileId,
+        scene.width,
+        scene.height,
+        JSON.stringify(scene.grid),
+        scene.fogEnabled ? 1 : 0,
+        scene.fog,
+      );
+    return id;
+  }
+
+  getScene(id: string): SceneRecord | undefined {
+    const row = this.db.prepare(`${SCENE_SELECT} WHERE s.id = ?`).get(id) as Row | undefined;
+    return row && Store.toScene(row);
+  }
+
+  scenes(campaignId: string): SceneRecord[] {
+    const rows = this.db.prepare(`${SCENE_SELECT} WHERE s.campaign_id = ? ORDER BY s.rowid`).all(campaignId) as Row[];
+    return rows.map(Store.toScene);
+  }
+
+  updateScene(id: string, patch: Partial<Pick<SceneRecord, 'name' | 'grid' | 'fogEnabled' | 'fog'>>): void {
+    const sets: string[] = [];
+    const values: (string | number)[] = [];
+    if (patch.name !== undefined) sets.push('name = ?'), values.push(patch.name);
+    if (patch.grid !== undefined) sets.push('grid = ?'), values.push(JSON.stringify(patch.grid));
+    if (patch.fogEnabled !== undefined) sets.push('fog_enabled = ?'), values.push(patch.fogEnabled ? 1 : 0);
+    if (patch.fog !== undefined) sets.push('fog = ?'), values.push(patch.fog);
+    if (sets.length === 0) return;
+    this.db.prepare(`UPDATE scenes SET ${sets.join(', ')} WHERE id = ?`).run(...values, id);
+  }
+
+  deleteScene(id: string): void {
+    this.db.prepare('DELETE FROM scenes WHERE id = ?').run(id);
+  }
+
+  activeSceneId(campaignId: string): string | null {
+    const row = this.db.prepare('SELECT active_scene_id FROM campaigns WHERE id = ?').get(campaignId) as Row | undefined;
+    return (row?.active_scene_id as string | null | undefined) ?? null;
+  }
+
+  setActiveScene(campaignId: string, sceneId: string | null): void {
+    this.db.prepare('UPDATE campaigns SET active_scene_id = ? WHERE id = ?').run(sceneId, campaignId);
+  }
+
+  // ---------- tokens ----------
+
+  private static toToken(row: Row): Token {
+    return {
+      id: row.id as string,
+      sceneId: row.scene_id as string,
+      name: row.name as string,
+      color: row.color as string,
+      col: Number(row.col),
+      row: Number(row.row),
+      size: Number(row.size),
+      hidden: Boolean(row.hidden),
+      ownerUserId: (row.owner_user_id as string | null) ?? null,
+    };
+  }
+
+  tokens(sceneId: string): Token[] {
+    const rows = this.db.prepare(`${TOKEN_SELECT} WHERE scene_id = ? ORDER BY rowid`).all(sceneId) as Row[];
+    return rows.map(Store.toToken);
+  }
+
+  getToken(id: string): Token | undefined {
+    const row = this.db.prepare(`${TOKEN_SELECT} WHERE id = ?`).get(id) as Row | undefined;
+    return row && Store.toToken(row);
+  }
+
+  createToken(token: Omit<Token, 'id'>): Token {
+    const id = randomUUID();
+    this.db
+      .prepare(
+        `INSERT INTO tokens (id, scene_id, name, color, col, row, size, hidden, owner_user_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(id, token.sceneId, token.name, token.color, token.col, token.row, token.size, token.hidden ? 1 : 0, token.ownerUserId);
+    return { ...token, id };
+  }
+
+  updateToken(token: Token): void {
+    this.db
+      .prepare(
+        `UPDATE tokens SET name = ?, color = ?, col = ?, row = ?, size = ?, hidden = ?, owner_user_id = ?
+         WHERE id = ?`,
+      )
+      .run(token.name, token.color, token.col, token.row, token.size, token.hidden ? 1 : 0, token.ownerUserId, token.id);
+  }
+
+  deleteToken(id: string): void {
+    this.db.prepare('DELETE FROM tokens WHERE id = ?').run(id);
+  }
+
   // ---------- log ----------
 
   addLog(
@@ -291,6 +423,13 @@ export class Store {
     return rows.reverse().map(toLogEntry);
   }
 }
+
+const SCENE_SELECT = `
+  SELECT s.id, s.campaign_id, s.name, s.width, s.height, s.grid, s.fog_enabled, s.fog, f.filename
+  FROM scenes s LEFT JOIN files f ON f.id = s.file_id`;
+
+const TOKEN_SELECT = `
+  SELECT id, scene_id, name, color, col, row, size, hidden, owner_user_id FROM tokens`;
 
 const LOG_SELECT = `
   SELECT l.id, l.kind, l.visibility, l.payload, l.created_at, l.user_id, u.display_name,

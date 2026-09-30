@@ -1,15 +1,19 @@
-import { DiceError, rollDice } from '@dnd/rules';
+import { DEFAULT_GRID, DiceError, gridGeometry, rollDice } from '@dnd/rules';
 import {
   ClientMessage,
+  type CameraRect,
   type ClientRole,
   type DisplayInfo,
   type LogEntry,
   type Member,
+  type SceneView,
   type ServerMessage,
+  type Token,
   type User,
 } from '@dnd/protocol';
 import type { WebSocket } from 'ws';
-import type { Display, Store } from './store';
+import { GameError, applyGridPatch, clampToGrid, fogMask, sceneView, summary } from './scenes';
+import type { Display, SceneRecord, Store } from './store';
 
 const LOG_HISTORY = 100;
 const HEARTBEAT_MS = 30_000;
@@ -20,7 +24,11 @@ interface Conn {
   campaignId: string;
   user?: User;
   displayId?: string;
+  /** GM only: the scene they have open, which may differ from the one players see. */
+  viewSceneId?: string;
 }
+
+type Msg<T extends ClientMessage['type']> = Extract<ClientMessage, { type: T }>;
 
 function send(socket: WebSocket, msg: ServerMessage): void {
   if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(msg));
@@ -39,6 +47,8 @@ export class Hub {
   /** Table displays waiting to be paired, keyed by display id. */
   private readonly pending = new Map<string, Set<WebSocket>>();
   private readonly alive = new WeakMap<WebSocket, boolean>();
+  /** Last GM framing per campaign, so a table screen that (re)connects shows the same view. */
+  private readonly cameras = new Map<string, { sceneId: string; rect: CameraRect }>();
   private readonly heartbeat: NodeJS.Timeout;
 
   constructor(private readonly store: Store) {
@@ -104,6 +114,10 @@ export class Hub {
     if (!room) this.rooms.set(conn.campaignId, (room = new Set()));
     room.add(conn);
     this.sendHello(conn);
+    const camera = this.cameras.get(conn.campaignId);
+    if (conn.role === 'display' && camera && camera.sceneId === this.store.activeSceneId(conn.campaignId)) {
+      send(conn.socket, { type: 'camera', ...camera });
+    }
     this.broadcastPresence(conn.campaignId);
   }
 
@@ -129,7 +143,178 @@ export class Hub {
       members: this.members(conn.campaignId),
       ...(isGm && { displays: this.displays(conn.campaignId) }),
       log,
+      activeSceneId: this.store.activeSceneId(conn.campaignId),
+      scene: this.viewFor(conn),
+      ...(isGm && { scenes: this.store.scenes(conn.campaignId).map(summary) }),
     });
+  }
+
+  // ---------- scenes ----------
+
+  /** The scene a connection is looking at: players and displays always see the active one. */
+  private sceneIdFor(conn: Conn): string | null {
+    const active = this.store.activeSceneId(conn.campaignId);
+    if (conn.role !== 'gm') return active;
+    if (conn.viewSceneId && this.store.getScene(conn.viewSceneId)?.campaignId === conn.campaignId) {
+      return conn.viewSceneId;
+    }
+    return active ?? this.store.scenes(conn.campaignId).at(-1)?.id ?? null;
+  }
+
+  private viewFor(conn: Conn): SceneView | null {
+    const id = this.sceneIdFor(conn);
+    const scene = id ? this.store.getScene(id) : undefined;
+    return scene ? sceneView(scene, this.store.tokens(scene.id), { role: conn.role, userId: conn.user?.id }) : null;
+  }
+
+  /** Re-sends a scene to everyone looking at it, each filtered for their role. */
+  private sceneChanged(campaignId: string, sceneId: string): void {
+    const scene = this.store.getScene(sceneId);
+    if (!scene) return;
+    const tokens = this.store.tokens(sceneId);
+    const views = new Map<string, SceneView>();
+    for (const conn of this.rooms.get(campaignId) ?? []) {
+      if (this.sceneIdFor(conn) !== sceneId) continue;
+      const key = conn.role === 'player' ? `player:${conn.user?.id}` : conn.role;
+      let view = views.get(key);
+      if (!view) views.set(key, (view = sceneView(scene, tokens, { role: conn.role, userId: conn.user?.id })));
+      send(conn.socket, { type: 'scene', scene: view });
+    }
+  }
+
+  /** The scene list or active scene changed: refresh GM lists and everyone's current scene. */
+  private scenesChanged(campaignId: string): void {
+    const scenes = this.store.scenes(campaignId).map(summary);
+    const activeSceneId = this.store.activeSceneId(campaignId);
+    for (const conn of this.rooms.get(campaignId) ?? []) {
+      if (conn.role === 'gm') send(conn.socket, { type: 'scenes', scenes, activeSceneId });
+      send(conn.socket, { type: 'scene', scene: this.viewFor(conn) });
+    }
+  }
+
+  private requireGm(conn: Conn): void {
+    if (conn.role !== 'gm') throw new GameError('Only the GM can do that');
+  }
+
+  private sceneOf(conn: Conn, sceneId: string): SceneRecord {
+    const scene = this.store.getScene(sceneId);
+    if (!scene || scene.campaignId !== conn.campaignId) throw new GameError('Scene not found');
+    return scene;
+  }
+
+  private tokenOf(conn: Conn, tokenId: string): { token: Token; scene: SceneRecord } {
+    const token = this.store.getToken(tokenId);
+    const scene = token && this.store.getScene(token.sceneId);
+    if (!token || !scene || scene.campaignId !== conn.campaignId) throw new GameError('Token not found');
+    return { token, scene };
+  }
+
+  private checkOwner(conn: Conn, ownerUserId: string | null | undefined): void {
+    if (ownerUserId && !this.store.roleIn(conn.campaignId, ownerUserId)) throw new GameError('Owner is not in this campaign');
+  }
+
+  private createScene(conn: Conn, msg: Msg<'scene:create'>): void {
+    this.requireGm(conn);
+    if (msg.fileId && this.store.getFile(msg.fileId)?.campaignId !== conn.campaignId) {
+      throw new GameError('Map image not found');
+    }
+    const grid = applyGridPatch(DEFAULT_GRID, msg.grid, msg.width, msg.height);
+    conn.viewSceneId = this.store.createScene({
+      campaignId: conn.campaignId,
+      name: msg.name,
+      fileId: msg.fileId,
+      width: msg.width,
+      height: msg.height,
+      grid,
+      fogEnabled: false,
+      fog: '',
+    });
+    this.scenesChanged(conn.campaignId);
+  }
+
+  private updateScene(conn: Conn, msg: Msg<'scene:update'>): void {
+    this.requireGm(conn);
+    const scene = this.sceneOf(conn, msg.sceneId);
+    const grid = msg.grid ? applyGridPatch(scene.grid, msg.grid, scene.width, scene.height) : scene.grid;
+    const before = gridGeometry(scene.grid, scene.width, scene.height);
+    const after = gridGeometry(grid, scene.width, scene.height);
+    const resized = before.cols !== after.cols || before.rows !== after.rows;
+    // A different cell count invalidates the fog mask; start fully fogged again.
+    this.store.updateScene(scene.id, { name: msg.name, grid, fogEnabled: msg.fogEnabled, ...(resized && { fog: '' }) });
+    if (resized) {
+      const updated = { ...scene, grid };
+      for (const token of this.store.tokens(scene.id)) {
+        this.store.updateToken({ ...token, ...clampToGrid(updated, token.col, token.row, token.size) });
+      }
+    }
+    if (msg.name !== undefined && msg.name !== scene.name) this.scenesChanged(conn.campaignId);
+    else this.sceneChanged(conn.campaignId, scene.id);
+  }
+
+  private paintFog(conn: Conn, sceneId: string, apply: (fog: ReturnType<typeof fogMask>) => void): void {
+    this.requireGm(conn);
+    const scene = this.sceneOf(conn, sceneId);
+    const fog = fogMask(scene);
+    apply(fog);
+    this.store.updateScene(scene.id, { fog: fog.encode() });
+    this.sceneChanged(conn.campaignId, scene.id);
+  }
+
+  private createToken(conn: Conn, msg: Msg<'token:create'>): void {
+    this.requireGm(conn);
+    const scene = this.sceneOf(conn, msg.sceneId);
+    this.checkOwner(conn, msg.ownerUserId);
+    const size = msg.size ?? 1;
+    this.store.createToken({
+      sceneId: scene.id,
+      name: msg.name,
+      color: msg.color,
+      size,
+      hidden: msg.hidden ?? false,
+      ownerUserId: msg.ownerUserId ?? null,
+      ...clampToGrid(scene, msg.col, msg.row, size),
+    });
+    this.sceneChanged(conn.campaignId, scene.id);
+  }
+
+  private updateToken(conn: Conn, msg: Msg<'token:update'>): void {
+    this.requireGm(conn);
+    const { token, scene } = this.tokenOf(conn, msg.tokenId);
+    this.checkOwner(conn, msg.ownerUserId);
+    const { type: _, tokenId: __, ...patch } = msg;
+    const next = { ...token, ...patch };
+    this.store.updateToken({ ...next, ...clampToGrid(scene, next.col, next.row, next.size) });
+    this.sceneChanged(conn.campaignId, scene.id);
+  }
+
+  private moveToken(conn: Conn, msg: Msg<'token:move'>): void {
+    const { token, scene } = this.tokenOf(conn, msg.tokenId);
+    if (conn.role !== 'gm') {
+      if (!conn.user || token.ownerUserId !== conn.user.id) throw new GameError("That's not your token");
+      if (scene.id !== this.store.activeSceneId(conn.campaignId)) throw new GameError('That scene is not in play');
+    }
+    const pos = clampToGrid(scene, msg.col, msg.row, token.size);
+    if (pos.col === token.col && pos.row === token.row) return;
+    this.store.updateToken({ ...token, ...pos });
+    this.sceneChanged(conn.campaignId, scene.id);
+  }
+
+  private ping(conn: Conn, msg: Msg<'ping'>): void {
+    if (!conn.user || this.sceneIdFor(conn) !== msg.sceneId) return;
+    const out: ServerMessage = { type: 'ping', sceneId: msg.sceneId, x: msg.x, y: msg.y, name: conn.user.displayName, role: conn.role };
+    for (const other of this.rooms.get(conn.campaignId) ?? []) {
+      if (this.sceneIdFor(other) === msg.sceneId) send(other.socket, out);
+    }
+  }
+
+  private camera(conn: Conn, msg: Msg<'camera'>): void {
+    this.requireGm(conn);
+    if (msg.sceneId !== this.store.activeSceneId(conn.campaignId)) return;
+    const camera = { sceneId: msg.sceneId, rect: msg.rect };
+    this.cameras.set(conn.campaignId, camera);
+    for (const other of this.rooms.get(conn.campaignId) ?? []) {
+      if (other.role === 'display') send(other.socket, { type: 'camera', ...camera });
+    }
   }
 
   // ---------- presence ----------
@@ -193,17 +378,18 @@ export class Hub {
     }
     const parsed = ClientMessage.safeParse(json);
     if (!parsed.success) return send(conn.socket, { type: 'error', message: 'Invalid message' });
-    const msg = parsed.data;
+    try {
+      this.dispatch(conn as Conn & { user: User }, parsed.data);
+    } catch (err) {
+      if (err instanceof GameError || err instanceof DiceError) send(conn.socket, { type: 'error', message: err.message });
+      else throw err;
+    }
+  }
 
+  private dispatch(conn: Conn & { user: User }, msg: ClientMessage): void {
     switch (msg.type) {
       case 'roll': {
-        let roll;
-        try {
-          roll = rollDice(msg.expr);
-        } catch (err) {
-          if (err instanceof DiceError) return send(conn.socket, { type: 'error', message: err.message });
-          throw err;
-        }
+        const roll = rollDice(msg.expr);
         const label = msg.label || undefined;
         this.publish(conn, this.store.addLog(conn.campaignId, conn.user.id, 'roll', msg.visibility, { label, roll }));
         break;
@@ -211,6 +397,47 @@ export class Hub {
       case 'chat':
         this.publish(conn, this.store.addLog(conn.campaignId, conn.user.id, 'chat', msg.visibility, { text: msg.text }));
         break;
+      case 'scene:create':
+        return this.createScene(conn, msg);
+      case 'scene:update':
+        return this.updateScene(conn, msg);
+      case 'scene:delete':
+        this.requireGm(conn);
+        this.store.deleteScene(this.sceneOf(conn, msg.sceneId).id);
+        if (this.cameras.get(conn.campaignId)?.sceneId === msg.sceneId) this.cameras.delete(conn.campaignId);
+        return this.scenesChanged(conn.campaignId);
+      case 'scene:activate':
+        this.requireGm(conn);
+        if (msg.sceneId) conn.viewSceneId = this.sceneOf(conn, msg.sceneId).id;
+        this.store.setActiveScene(conn.campaignId, msg.sceneId);
+        this.cameras.delete(conn.campaignId);
+        return this.scenesChanged(conn.campaignId);
+      case 'scene:view':
+        this.requireGm(conn);
+        conn.viewSceneId = this.sceneOf(conn, msg.sceneId).id;
+        return send(conn.socket, { type: 'scene', scene: this.viewFor(conn) });
+      case 'fog:paint':
+        return this.paintFog(conn, msg.sceneId, (fog) => {
+          for (const i of msg.cells) fog.setIndex(i, msg.reveal);
+        });
+      case 'fog:fill':
+        return this.paintFog(conn, msg.sceneId, (fog) => fog.fill(msg.reveal));
+      case 'token:create':
+        return this.createToken(conn, msg);
+      case 'token:update':
+        return this.updateToken(conn, msg);
+      case 'token:move':
+        return this.moveToken(conn, msg);
+      case 'token:delete': {
+        this.requireGm(conn);
+        const { token, scene } = this.tokenOf(conn, msg.tokenId);
+        this.store.deleteToken(token.id);
+        return this.sceneChanged(conn.campaignId, scene.id);
+      }
+      case 'ping':
+        return this.ping(conn, msg);
+      case 'camera':
+        return this.camera(conn, msg);
     }
   }
 
