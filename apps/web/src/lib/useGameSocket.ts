@@ -1,15 +1,29 @@
 import {
   CloseCode,
+  type CameraRect,
   type ClientMessage,
+  type ClientRole,
   type DisplayInfo,
   type Hello,
   type LogEntry,
   type Member,
+  type SceneSummary,
+  type SceneView,
   type ServerMessage,
 } from '@dnd/protocol';
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 
 const MAX_LOG = 300;
+const PING_MS = 2500;
+
+export interface Ping {
+  id: number;
+  sceneId: string;
+  x: number;
+  y: number;
+  name: string;
+  role: ClientRole;
+}
 
 export type SocketStatus = 'connecting' | 'open' | 'reconnecting' | 'failed';
 
@@ -19,6 +33,14 @@ export interface GameState {
   members: Member[];
   displays: DisplayInfo[];
   log: LogEntry[];
+  activeSceneId: string | null;
+  /** The scene this client is looking at. */
+  scene: SceneView | null;
+  /** GM only: every scene in the campaign. */
+  scenes: SceneSummary[];
+  pings: Ping[];
+  /** Latest GM framing (table displays only). */
+  camera?: { sceneId: string; rect: CameraRect };
   /** Set for table displays that still need pairing. */
   unpairedCode?: string;
   /** Last error sent by the server (e.g. a bad dice formula), with a nonce so repeats re-trigger. */
@@ -31,9 +53,22 @@ type Action =
   | { type: 'reset' }
   | { type: 'status'; status: SocketStatus }
   | { type: 'failed'; code: number; reason: string }
-  | { type: 'message'; msg: ServerMessage };
+  | { type: 'message'; msg: ServerMessage }
+  | { type: 'ping:add'; ping: Ping }
+  | { type: 'ping:expire'; id: number };
 
-const initial: GameState = { status: 'connecting', members: [], displays: [], log: [] };
+const initial: GameState = {
+  status: 'connecting',
+  members: [],
+  displays: [],
+  log: [],
+  activeSceneId: null,
+  scene: null,
+  scenes: [],
+  pings: [],
+};
+
+let pingSeq = 0;
 
 function reducer(state: GameState, action: Action): GameState {
   switch (action.type) {
@@ -43,6 +78,10 @@ function reducer(state: GameState, action: Action): GameState {
       return { ...state, status: action.status };
     case 'failed':
       return { ...state, status: 'failed', failure: { code: action.code, reason: action.reason } };
+    case 'ping:add':
+      return { ...state, pings: [...state.pings, action.ping].slice(-20) };
+    case 'ping:expire':
+      return { ...state, pings: state.pings.filter((p) => p.id !== action.id) };
     case 'message': {
       const msg = action.msg;
       switch (msg.type) {
@@ -54,6 +93,11 @@ function reducer(state: GameState, action: Action): GameState {
             members: msg.members,
             displays: msg.displays ?? [],
             log: msg.log,
+            activeSceneId: msg.activeSceneId,
+            scene: msg.scene,
+            scenes: msg.scenes ?? [],
+            pings: [],
+            camera: undefined,
             unpairedCode: undefined,
           };
         case 'members':
@@ -64,10 +108,21 @@ function reducer(state: GameState, action: Action): GameState {
           return { ...state, log: [...state.log, msg.entry].slice(-MAX_LOG) };
         case 'error':
           return { ...state, error: { message: msg.message, nonce: Date.now() } };
+        case 'scene':
+          return {
+            ...state,
+            scene: msg.scene,
+            // A different scene means the old framing no longer applies.
+            camera: msg.scene && state.camera?.sceneId === msg.scene.id ? state.camera : undefined,
+          };
+        case 'scenes':
+          return { ...state, scenes: msg.scenes, activeSceneId: msg.activeSceneId };
+        case 'ping':
+          return state; // handled as 'ping:add' so ids are assigned outside the reducer
+        case 'camera':
+          return { ...state, camera: { sceneId: msg.sceneId, rect: msg.rect } };
         case 'display:unpaired':
           return { ...initial, status: 'open', unpairedCode: msg.code };
-        default:
-          return state;
       }
     }
   }
@@ -96,7 +151,17 @@ export function useGameSocket(query: string | null) {
       ws.onopen = () => {
         attempt = 0;
       };
-      ws.onmessage = (ev) => dispatch({ type: 'message', msg: JSON.parse(ev.data as string) as ServerMessage });
+      ws.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data as string) as ServerMessage;
+        if (msg.type === 'ping') {
+          const { type: _, ...ping } = msg;
+          const id = ++pingSeq;
+          dispatch({ type: 'ping:add', ping: { ...ping, id } });
+          setTimeout(() => dispatch({ type: 'ping:expire', id }), PING_MS);
+        } else {
+          dispatch({ type: 'message', msg });
+        }
+      };
       ws.onclose = (ev) => {
         if (socketRef.current === ws) socketRef.current = null;
         if (stopped) return;
