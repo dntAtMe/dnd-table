@@ -1,7 +1,22 @@
-import { DEFAULT_GRID, DiceError, gridGeometry, rollDice } from '@dnd/rules';
+import {
+  BACKGROUNDS,
+  CLASSES,
+  DEFAULT_GRID,
+  DiceError,
+  SPECIES,
+  abilityMod,
+  computeCharacter,
+  formatModifier,
+  gridGeometry,
+  longRest,
+  rollDice,
+  shortRest,
+  type Character,
+} from '@dnd/rules';
 import {
   ClientMessage,
   type CameraRect,
+  type CharacterRecord,
   type ClientRole,
   type DisplayInfo,
   type LogEntry,
@@ -146,7 +161,112 @@ export class Hub {
       activeSceneId: this.store.activeSceneId(conn.campaignId),
       scene: this.viewFor(conn),
       ...(isGm && { scenes: this.store.scenes(conn.campaignId).map(summary) }),
+      characters: this.charactersFor(conn),
     });
+  }
+
+  // ---------- characters ----------
+
+  /** Everyone sees the party's sheets, but only owners and GMs see a character's notes. */
+  private charactersFor(conn: Conn, all = this.store.characters(conn.campaignId)): CharacterRecord[] {
+    if (conn.role === 'display') return [];
+    return all.map(({ campaignId: _, ...rec }) =>
+      conn.role === 'gm' || rec.ownerUserId === conn.user?.id ? rec : { ...rec, data: { ...rec.data, notes: '' } },
+    );
+  }
+
+  private charactersChanged(campaignId: string): void {
+    const all = this.store.characters(campaignId);
+    for (const conn of this.rooms.get(campaignId) ?? []) {
+      if (conn.role !== 'display') send(conn.socket, { type: 'characters', characters: this.charactersFor(conn, all) });
+    }
+  }
+
+  private characterOf(conn: Conn, characterId: string, edit = true) {
+    const rec = this.store.getCharacter(characterId);
+    if (!rec || rec.campaignId !== conn.campaignId) throw new GameError('Character not found');
+    if (edit && conn.role !== 'gm' && rec.ownerUserId !== conn.user?.id) throw new GameError("That's not your character");
+    return rec;
+  }
+
+  private checkCharacter(data: Character): void {
+    if (!CLASSES[data.classId]) throw new GameError('Unknown class');
+    if (!SPECIES[data.speciesId]) throw new GameError('Unknown species');
+    if (!BACKGROUNDS[data.backgroundId]) throw new GameError('Unknown background');
+    try {
+      computeCharacter(data);
+    } catch (err) {
+      throw new GameError(`Invalid character: ${(err as Error).message}`);
+    }
+  }
+
+  private saveCharacter(conn: Conn, id: string, data: Character, before?: Character): void {
+    this.store.updateCharacter(id, data);
+    if (!before || before.name !== data.name || before.color !== data.color) {
+      for (const sceneId of this.store.syncCharacterTokens(id, data.name, data.color)) this.sceneChanged(conn.campaignId, sceneId);
+    }
+    this.charactersChanged(conn.campaignId);
+  }
+
+  private rest(conn: Conn & { user: User }, msg: Msg<'character:rest'>): void {
+    const rec = this.characterOf(conn, msg.characterId);
+    const data = rec.data;
+    const derived = computeCharacter(data);
+    let state;
+    if (msg.kind === 'long') {
+      state = longRest(data, derived);
+      this.publish(conn, this.store.addLog(conn.campaignId, conn.user.id, 'chat', 'public', { text: `${data.name} finishes a Long Rest.` }));
+    } else {
+      const dice = Math.min(msg.hitDice ?? 0, data.level - data.state.hitDiceSpent);
+      let healing = 0;
+      if (dice > 0) {
+        const con = abilityMod(derived.scores.con) * dice;
+        const roll = rollDice(con ? `${dice}d${derived.hitDie} ${formatModifier(con)}` : `${dice}d${derived.hitDie}`);
+        healing = Math.max(0, roll.total);
+        const label = `${data.name}: Short Rest, ${dice} Hit ${dice === 1 ? 'Die' : 'Dice'}`;
+        this.publish(conn, this.store.addLog(conn.campaignId, conn.user.id, 'roll', 'public', { label, roll }));
+      } else {
+        this.publish(conn, this.store.addLog(conn.campaignId, conn.user.id, 'chat', 'public', { text: `${data.name} takes a Short Rest.` }));
+      }
+      state = shortRest(data, derived, dice, healing);
+    }
+    this.saveCharacter(conn, rec.id, { ...data, state }, data);
+  }
+
+  private placeCharacterToken(conn: Conn, characterId: string): void {
+    const rec = this.characterOf(conn, characterId);
+    const sceneId = this.sceneIdFor(conn);
+    if (!sceneId) throw new GameError('There is no map to place the token on');
+    const scene = this.sceneOf(conn, sceneId);
+    const tokens = this.store.tokens(scene.id);
+    if (tokens.some((t) => t.characterId === rec.id)) throw new GameError(`${rec.data.name} is already on this map`);
+    const { cols, rows } = gridGeometry(scene.grid, scene.width, scene.height);
+    const taken = (c: number, r: number) => tokens.some((t) => c >= t.col && c < t.col + t.size && r >= t.row && r < t.row + t.size);
+    let spot = { col: Math.floor(cols / 2), row: Math.floor(rows / 2) };
+    search: for (let ring = 0; ring < Math.max(cols, rows); ring++) {
+      for (let dr = -ring; dr <= ring; dr++) {
+        for (let dc = -ring; dc <= ring; dc++) {
+          if (Math.max(Math.abs(dc), Math.abs(dr)) !== ring) continue;
+          const col = spot.col + dc;
+          const row = spot.row + dr;
+          if (col >= 0 && row >= 0 && col < cols && row < rows && !taken(col, row)) {
+            spot = { col, row };
+            break search;
+          }
+        }
+      }
+    }
+    this.store.createToken({
+      sceneId: scene.id,
+      name: rec.data.name,
+      color: rec.data.color,
+      size: 1,
+      hidden: false,
+      ownerUserId: rec.ownerUserId,
+      characterId: rec.id,
+      ...spot,
+    });
+    this.sceneChanged(conn.campaignId, scene.id);
   }
 
   // ---------- scenes ----------
@@ -272,6 +392,7 @@ export class Hub {
       size,
       hidden: msg.hidden ?? false,
       ownerUserId: msg.ownerUserId ?? null,
+      characterId: null,
       ...clampToGrid(scene, msg.col, msg.row, size),
     });
     this.sceneChanged(conn.campaignId, scene.id);
@@ -434,6 +555,29 @@ export class Hub {
         this.store.deleteToken(token.id);
         return this.sceneChanged(conn.campaignId, scene.id);
       }
+      case 'character:create': {
+        this.checkCharacter(msg.data as Character);
+        this.store.createCharacter(conn.campaignId, conn.user.id, msg.data as Character);
+        return this.charactersChanged(conn.campaignId);
+      }
+      case 'character:update': {
+        const rec = this.characterOf(conn, msg.characterId);
+        this.checkCharacter(msg.data as Character);
+        return this.saveCharacter(conn, rec.id, msg.data as Character, rec.data);
+      }
+      case 'character:state': {
+        const rec = this.characterOf(conn, msg.characterId);
+        const state = { ...rec.data.state, ...msg.patch } as Character['state'];
+        state.hp = Math.min(state.hp, computeCharacter(rec.data).hpMax);
+        return this.saveCharacter(conn, rec.id, { ...rec.data, state }, rec.data);
+      }
+      case 'character:delete':
+        this.store.deleteCharacter(this.characterOf(conn, msg.characterId).id);
+        return this.charactersChanged(conn.campaignId);
+      case 'character:rest':
+        return this.rest(conn, msg);
+      case 'character:token':
+        return this.placeCharacterToken(conn, msg.characterId);
       case 'ping':
         return this.ping(conn, msg);
       case 'camera':

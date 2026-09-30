@@ -1,6 +1,6 @@
 // Shapes shared by the server and the web client: REST payloads and WebSocket messages.
 import { z } from 'zod';
-import type { Grid, RollResult } from '@dnd/rules';
+import { ABILITIES, CHARACTER_VERSION, CONDITION_IDS, MAX_EXHAUSTION, SKILL_IDS, type Character, type Grid, type RollResult } from '@dnd/rules';
 
 export type Role = 'gm' | 'player';
 /** Who is on the other end of a socket. Displays are paired table screens with no user. */
@@ -68,6 +68,8 @@ export interface Token {
   hidden: boolean;
   /** The player who may move this token, if any. */
   ownerUserId: string | null;
+  /** Character this token represents, if any. */
+  characterId: string | null;
 }
 
 export interface SceneSummary {
@@ -117,6 +119,81 @@ const TokenFields = z.object({
   hidden: z.boolean(),
   ownerUserId: Id.nullable(),
 });
+
+// ---------- characters ----------
+
+const Score = z.number().int().min(1).max(30);
+const Scores = z.object(Object.fromEntries(ABILITIES.map((a) => [a, Score])) as Record<(typeof ABILITIES)[number], typeof Score>);
+const PartialScores = z
+  .object(Object.fromEntries(ABILITIES.map((a) => [a, z.number().int().min(-4).max(10)])) as Record<(typeof ABILITIES)[number], z.ZodNumber>)
+  .partial();
+const SkillId = z.enum(SKILL_IDS as [string, ...string[]]);
+const ShortText = z.string().max(80);
+const Count = z.number().int().min(0).max(999_999);
+
+export const CharacterState = z.object({
+  hp: z.number().int().min(0).max(9999),
+  tempHp: z.number().int().min(0).max(9999),
+  deathSaves: z.object({ successes: z.number().int().min(0).max(3), failures: z.number().int().min(0).max(3) }),
+  hitDiceSpent: z.number().int().min(0).max(20),
+  slotsUsed: z.array(z.number().int().min(0).max(9)).length(9),
+  resourcesUsed: z.record(z.string().max(40), z.number().int().min(0).max(999)),
+  conditions: z.array(z.enum(CONDITION_IDS as [string, ...string[]])).max(15),
+  exhaustion: z.number().int().min(0).max(MAX_EXHAUSTION),
+  heroicInspiration: z.boolean(),
+});
+
+/** Validates a stored character document (see Character in @dnd/rules). */
+export const CharacterData = z.object({
+  version: z.literal(CHARACTER_VERSION),
+  name: z.string().trim().min(1).max(60),
+  color: Color,
+  classId: ShortText,
+  level: z.number().int().min(1).max(20),
+  subclassId: ShortText.nullable(),
+  speciesId: ShortText,
+  subspeciesId: ShortText.nullable(),
+  size: z.string().max(20),
+  backgroundId: ShortText,
+  baseScores: Scores,
+  backgroundBonus: PartialScores,
+  advancements: z.array(z.object({ level: z.number().int().min(1).max(20), featId: ShortText, increases: PartialScores })).max(20),
+  fightingStyle: ShortText.nullable(),
+  extraFeats: z.array(z.object({ featId: ShortText, note: ShortText.optional() })).max(10),
+  skills: z.array(SkillId).max(18),
+  expertise: z.array(SkillId).max(18),
+  weaponMasteries: z.array(ShortText).max(10),
+  hpRolls: z.array(z.number().int().min(1).max(12).nullable()).max(19),
+  languages: z.array(ShortText).max(20),
+  tools: z.array(ShortText).max(20),
+  equipment: z.object({
+    armorId: ShortText.nullable(),
+    shield: z.boolean(),
+    weapons: z.array(z.object({ weaponId: ShortText, name: ShortText.optional() })).max(30),
+    items: z.array(z.object({ name: ShortText, qty: z.number().int().min(0).max(9999), notes: z.string().max(500).optional() })).max(200),
+  }),
+  currency: z.object({ cp: Count, sp: Count, ep: Count, gp: Count, pp: Count }),
+  spells: z
+    .array(
+      z.object({
+        spellId: ShortText.optional(),
+        name: ShortText,
+        level: z.number().int().min(0).max(9),
+        prepared: z.boolean(),
+        notes: z.string().max(500).optional(),
+      }),
+    )
+    .max(200),
+  state: CharacterState,
+  notes: z.string().max(20_000),
+});
+
+export interface CharacterRecord {
+  id: string;
+  ownerUserId: string;
+  data: Character;
+  updatedAt: string;
+}
 
 // ---------- WebSocket ----------
 
@@ -172,6 +249,21 @@ export const ClientMessage = z.discriminatedUnion('type', [
   TokenFields.partial().extend({ type: z.literal('token:update'), tokenId: Id }),
   z.object({ type: z.literal('token:move'), tokenId: Id, col: Cell, row: Cell }),
   z.object({ type: z.literal('token:delete'), tokenId: Id }),
+
+  // Characters (owner or GM)
+  z.object({ type: z.literal('character:create'), data: CharacterData }),
+  z.object({ type: z.literal('character:update'), characterId: Id, data: CharacterData }),
+  /** Merges into the live state only, so quick HP/slot changes don't overwrite other edits. */
+  z.object({ type: z.literal('character:state'), characterId: Id, patch: CharacterState.partial() }),
+  z.object({ type: z.literal('character:delete'), characterId: Id }),
+  z.object({
+    type: z.literal('character:rest'),
+    characterId: Id,
+    kind: z.enum(['short', 'long']),
+    hitDice: z.number().int().min(0).max(20).optional(),
+  }),
+  /** Puts the character's token on the scene the sender is looking at. */
+  z.object({ type: z.literal('character:token'), characterId: Id }),
 
   // Pointers
   z.object({ type: z.literal('ping'), sceneId: Id, x: z.number().finite(), y: z.number().finite() }),
@@ -232,6 +324,8 @@ export interface Hello {
   scene: SceneView | null;
   /** Only sent to GMs. */
   scenes?: SceneSummary[];
+  /** Party characters (not sent to table screens). Other players' private notes are removed. */
+  characters: CharacterRecord[];
 }
 
 export type ServerMessage =
@@ -244,6 +338,7 @@ export type ServerMessage =
   | { type: 'scenes'; scenes: SceneSummary[]; activeSceneId: string | null }
   | { type: 'ping'; sceneId: string; x: number; y: number; name: string; role: ClientRole }
   | { type: 'camera'; sceneId: string; rect: CameraRect }
+  | { type: 'characters'; characters: CharacterRecord[] }
   /** Sent to a table display that is not (or no longer) paired with a campaign. */
   | { type: 'display:unpaired'; code: string };
 

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { CampaignSummary, LogEntry, Role, SceneSummary, Token, User, Visibility } from '@dnd/protocol';
-import type { Grid } from '@dnd/rules';
+import type { CampaignSummary, CharacterRecord, LogEntry, Role, SceneSummary, Token, User, Visibility } from '@dnd/protocol';
+import type { Character, Grid } from '@dnd/rules';
 import type { DB } from './db';
 import { hashToken, newToken, randomCode } from './security';
 
@@ -355,6 +355,7 @@ export class Store {
       size: Number(row.size),
       hidden: Boolean(row.hidden),
       ownerUserId: (row.owner_user_id as string | null) ?? null,
+      characterId: (row.character_id as string | null) ?? null,
     };
   }
 
@@ -372,10 +373,21 @@ export class Store {
     const id = randomUUID();
     this.db
       .prepare(
-        `INSERT INTO tokens (id, scene_id, name, color, col, row, size, hidden, owner_user_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO tokens (id, scene_id, name, color, col, row, size, hidden, owner_user_id, character_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, token.sceneId, token.name, token.color, token.col, token.row, token.size, token.hidden ? 1 : 0, token.ownerUserId);
+      .run(
+        id,
+        token.sceneId,
+        token.name,
+        token.color,
+        token.col,
+        token.row,
+        token.size,
+        token.hidden ? 1 : 0,
+        token.ownerUserId,
+        token.characterId,
+      );
     return { ...token, id };
   }
 
@@ -390,6 +402,58 @@ export class Store {
 
   deleteToken(id: string): void {
     this.db.prepare('DELETE FROM tokens WHERE id = ?').run(id);
+  }
+
+  /** Keeps map tokens in step with their character's name and colour; returns affected scene ids. */
+  syncCharacterTokens(characterId: string, name: string, color: string): string[] {
+    const rows = this.db
+      .prepare('UPDATE tokens SET name = ?, color = ? WHERE character_id = ? RETURNING scene_id')
+      .all(name, color, characterId) as Row[];
+    return [...new Set(rows.map((r) => r.scene_id as string))];
+  }
+
+  // ---------- characters ----------
+
+  private static toCharacter(row: Row): CharacterRecord & { campaignId: string } {
+    return {
+      id: row.id as string,
+      campaignId: row.campaign_id as string,
+      ownerUserId: row.owner_user_id as string,
+      data: JSON.parse(row.data as string) as Character,
+      updatedAt: row.updated_at as string,
+    };
+  }
+
+  characters(campaignId: string): (CharacterRecord & { campaignId: string })[] {
+    const rows = this.db
+      .prepare('SELECT id, campaign_id, owner_user_id, data, updated_at FROM characters WHERE campaign_id = ? ORDER BY rowid')
+      .all(campaignId) as Row[];
+    return rows.map(Store.toCharacter);
+  }
+
+  getCharacter(id: string): (CharacterRecord & { campaignId: string }) | undefined {
+    const row = this.db.prepare('SELECT id, campaign_id, owner_user_id, data, updated_at FROM characters WHERE id = ?').get(id) as
+      | Row
+      | undefined;
+    return row && Store.toCharacter(row);
+  }
+
+  createCharacter(campaignId: string, ownerUserId: string, data: Character): string {
+    const id = randomUUID();
+    this.db
+      .prepare('INSERT INTO characters (id, campaign_id, owner_user_id, data) VALUES (?, ?, ?, ?)')
+      .run(id, campaignId, ownerUserId, JSON.stringify(data));
+    return id;
+  }
+
+  updateCharacter(id: string, data: Character): void {
+    this.db
+      .prepare(`UPDATE characters SET data = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?`)
+      .run(JSON.stringify(data), id);
+  }
+
+  deleteCharacter(id: string): void {
+    this.db.prepare('DELETE FROM characters WHERE id = ?').run(id);
   }
 
   // ---------- log ----------
@@ -429,7 +493,7 @@ const SCENE_SELECT = `
   FROM scenes s LEFT JOIN files f ON f.id = s.file_id`;
 
 const TOKEN_SELECT = `
-  SELECT id, scene_id, name, color, col, row, size, hidden, owner_user_id FROM tokens`;
+  SELECT id, scene_id, name, color, col, row, size, hidden, owner_user_id, character_id FROM tokens`;
 
 const LOG_SELECT = `
   SELECT l.id, l.kind, l.visibility, l.payload, l.created_at, l.user_id, u.display_name,

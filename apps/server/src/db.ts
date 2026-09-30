@@ -92,6 +92,18 @@ const MIGRATIONS = [
   CREATE INDEX tokens_by_scene ON tokens (scene_id, created_at);
   ALTER TABLE campaigns ADD COLUMN active_scene_id TEXT REFERENCES scenes(id) ON DELETE SET NULL;
   `,
+  `
+  CREATE TABLE characters (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    owner_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    data TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT ${NOW},
+    updated_at TEXT NOT NULL DEFAULT ${NOW}
+  );
+  CREATE INDEX characters_by_campaign ON characters (campaign_id);
+  ALTER TABLE tokens ADD COLUMN character_id TEXT REFERENCES characters(id) ON DELETE SET NULL;
+  `,
 ];
 
 export function openDb(file: string): DB {

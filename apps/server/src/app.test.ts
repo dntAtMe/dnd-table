@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { ServerMessage } from '@dnd/protocol';
+import { CHARACTER_VERSION, emptyState, type Character } from '@dnd/rules';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { buildApp } from './app';
@@ -417,5 +418,124 @@ describe('scenes and tokens', () => {
     gmSock.send({ type: 'scene:create', name: 'Mine', fileId: mine.id, width: 100, height: 100 });
     const { scenes } = await gmSock.until('scenes', (m) => m.scenes.length === 2);
     expect(scenes[1]).toMatchObject({ name: 'Mine', imageUrl: mine.url });
+  });
+});
+
+function fighter(name: string, overrides: Partial<Character> = {}): Character {
+  return {
+    version: CHARACTER_VERSION,
+    name,
+    color: '#2e86de',
+    classId: 'fighter',
+    level: 3,
+    subclassId: 'champion',
+    speciesId: 'human',
+    subspeciesId: null,
+    size: 'Medium',
+    backgroundId: 'soldier',
+    baseScores: { str: 15, dex: 13, con: 14, int: 8, wis: 12, cha: 10 },
+    backgroundBonus: { str: 2, con: 1 },
+    advancements: [],
+    fightingStyle: 'defense',
+    extraFeats: [],
+    skills: ['perception', 'survival'],
+    expertise: [],
+    weaponMasteries: ['longsword'],
+    hpRolls: [null, null],
+    languages: [],
+    tools: [],
+    equipment: { armorId: 'chain-mail', shield: true, weapons: [{ weaponId: 'longsword' }], items: [] },
+    currency: { cp: 0, sp: 0, ep: 0, gp: 10, pp: 0 },
+    spells: [],
+    state: emptyState({ classId: 'fighter', level: 3 }, 28),
+    notes: 'Secret: owes the thieves guild',
+    ...overrides,
+  };
+}
+
+describe('characters', () => {
+  async function party() {
+    const { gm, player, campaignId } = await campaignWithPlayer();
+    const gmSock = await gm.socket(`campaign=${campaignId}`);
+    const { campaign } = await gmSock.until('hello');
+    const other = await Client.register('bram', 'Bram');
+    await player.call('POST', '/api/campaigns/join', { inviteCode: campaign.inviteCode });
+    await other.call('POST', '/api/campaigns/join', { inviteCode: campaign.inviteCode });
+    const playerSock = await player.socket(`campaign=${campaignId}`);
+    const otherSock = await other.socket(`campaign=${campaignId}`);
+    expect((await playerSock.until('hello')).characters).toEqual([]);
+    await otherSock.until('hello');
+
+    playerSock.send({ type: 'character:create', data: fighter('Ana') });
+    const { characters } = await gmSock.until('characters');
+    return { gm, gmSock, playerSock, otherSock, campaignId, id: characters[0]!.id, characters };
+  }
+
+  it('shares sheets with the party but keeps notes private', async () => {
+    const { gmSock, otherSock, characters } = await party();
+    expect(characters[0]!.data).toMatchObject({ name: 'Ana', notes: 'Secret: owes the thieves guild' });
+    const seenByOther = await otherSock.until('characters');
+    expect(seenByOther.characters[0]!.data).toMatchObject({ name: 'Ana', notes: '' });
+    gmSock.close();
+  });
+
+  it('lets owners and the GM edit, but not other players', async () => {
+    const { gmSock, playerSock, otherSock, id } = await party();
+    otherSock.send({ type: 'character:state', characterId: id, patch: { hp: 1 } });
+    expect(await otherSock.until('error')).toMatchObject({ message: "That's not your character" });
+
+    // HP is clamped to the derived maximum.
+    playerSock.send({ type: 'character:state', characterId: id, patch: { hp: 999, conditions: ['poisoned'] } });
+    const patched = await gmSock.until('characters', (m) => m.characters[0]!.data.state.conditions.length === 1);
+    expect(patched.characters[0]!.data.state).toMatchObject({ hp: 28, conditions: ['poisoned'] });
+
+    gmSock.send({ type: 'character:update', characterId: id, data: fighter('Ana', { level: 4 }) });
+    await playerSock.until('characters', (m) => m.characters[0]!.data.level === 4);
+
+    playerSock.send({ type: 'character:update', characterId: id, data: fighter('Ana', { classId: 'necromancer' }) });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'Unknown class' });
+    playerSock.send({ type: 'character:update', characterId: id, data: { ...fighter('Ana'), level: 40 } });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'Invalid message' });
+  });
+
+  it('resolves rests on the server and logs the hit dice roll', async () => {
+    const { gmSock, playerSock, id } = await party();
+    playerSock.send({ type: 'character:state', characterId: id, patch: { hp: 5, resourcesUsed: { 'second-wind': 2, 'action-surge': 1 } } });
+    await gmSock.until('characters', (m) => m.characters[0]!.data.state.hp === 5);
+
+    playerSock.send({ type: 'character:rest', characterId: id, kind: 'short', hitDice: 2 });
+    const { entry } = await gmSock.until('log');
+    expect(entry).toMatchObject({ kind: 'roll', label: 'Ana: Short Rest, 2 Hit Dice' });
+    if (entry.kind !== 'roll') throw new Error('expected roll');
+    expect(entry.roll.expression).toBe('2d10 + 4');
+    const rested = (await gmSock.until('characters', (m) => m.characters[0]!.data.state.hitDiceSpent === 2)).characters[0]!.data.state;
+    expect(rested.hp).toBe(Math.min(28, 5 + entry.roll.total));
+    expect(rested.resourcesUsed).toEqual({ 'second-wind': 1, 'action-surge': 0 });
+
+    playerSock.send({ type: 'character:rest', characterId: id, kind: 'long' });
+    expect((await gmSock.until('log')).entry).toMatchObject({ kind: 'chat', text: 'Ana finishes a Long Rest.' });
+    const full = (await gmSock.until('characters', (m) => m.characters[0]!.data.state.hitDiceSpent === 0)).characters[0]!.data.state;
+    expect(full).toMatchObject({ hp: 28, resourcesUsed: {}, heroicInspiration: true });
+  });
+
+  it('places a linked token and keeps its name in sync', async () => {
+    const { gmSock, playerSock, id } = await party();
+    playerSock.send({ type: 'character:token', characterId: id });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'There is no map to place the token on' });
+
+    gmSock.send({ type: 'scene:create', name: 'Road', fileId: null, width: 500, height: 500, grid: { size: 50 } });
+    const { scenes } = await gmSock.until('scenes');
+    gmSock.send({ type: 'scene:activate', sceneId: scenes[0]!.id });
+    await playerSock.until('scene', (m) => m.scene !== null);
+
+    playerSock.send({ type: 'character:token', characterId: id });
+    const placed = await gmSock.until('scene', (m) => (m.scene?.tokens.length ?? 0) === 1);
+    expect(placed.scene!.tokens[0]).toMatchObject({ name: 'Ana', characterId: id, col: 5, row: 5 });
+    playerSock.send({ type: 'character:token', characterId: id });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'Ana is already on this map' });
+
+    playerSock.send({ type: 'character:update', characterId: id, data: fighter('Ana Swiftblade') });
+    const renamed = await gmSock.until('scene', (m) => m.scene?.tokens[0]?.name === 'Ana Swiftblade');
+    expect(renamed.scene!.tokens[0]!.characterId).toBe(id);
   });
 });
