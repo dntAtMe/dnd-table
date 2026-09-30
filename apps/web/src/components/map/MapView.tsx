@@ -1,9 +1,11 @@
 import type { CameraRect, SceneView, Token } from '@dnd/protocol';
-import { FogMask, gridGeometry } from '@dnd/rules';
+import { FogMask, brushCells, gridGeometry, pointToCell } from '@dnd/rules';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useElementSize } from '../../lib/useElementSize';
 import { fitRect, screenToMap, visibleRect, zoomAt, type Camera } from './camera';
 import { fogPath } from './fogPath';
+
+export type MapTool = 'move' | 'reveal' | 'hide';
 
 export interface MapViewProps {
   scene: SceneView;
@@ -19,6 +21,10 @@ export interface MapViewProps {
   selectedTokenId?: string | null;
   onSelectToken?: (id: string | null) => void;
   onMoveToken?: (id: string, col: number, row: number) => void;
+  tool?: MapTool;
+  /** Fog brush diameter in cells. */
+  brush?: number;
+  onPaintFog?: (cells: number[], reveal: boolean) => void;
   /** Overlay controls drawn above the map (toolbars). */
   children?: ReactNode;
 }
@@ -27,6 +33,8 @@ export interface MapViewProps {
 const DRAG_THRESHOLD = 4;
 /** How long to show a moved token at its new spot before trusting the server's copy again. */
 const PENDING_MOVE_MS = 1500;
+/** Fog strokes are sent in batches while painting so others see them appear. */
+const FOG_FLUSH_MS = 150;
 
 type Gesture =
   | { kind: 'pan'; pointerId: number; sx: number; sy: number; cam: Camera; moved: boolean }
@@ -42,6 +50,7 @@ type Gesture =
       sy: number;
       moved: boolean;
     }
+  | { kind: 'paint'; pointerId: number; last: { col: number; row: number }; unsent: Set<number>; sentAt: number }
   | { kind: 'pinch'; dist: number; cx: number; cy: number; cam: Camera };
 
 function initials(name: string): string {
@@ -93,6 +102,9 @@ export function MapView({
   selectedTokenId,
   onSelectToken,
   onMoveToken,
+  tool = 'move',
+  brush = 1,
+  onPaintFog,
   children,
 }: MapViewProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -110,6 +122,11 @@ export function MapView({
   const [pending, setPending] = useState<Record<string, { col: number; row: number }>>({});
 
   useEffect(() => setPending({}), [scene.tokens]);
+  /** Cells painted in the current stroke, shown before the server echoes them back. */
+  const [stroke, setStroke] = useState<{ reveal: boolean; cells: Set<number> } | null>(null);
+  useEffect(() => {
+    if (gesture.current?.kind !== 'paint') setStroke(null);
+  }, [scene.fog]);
   useEffect(() => {
     if (Object.keys(pending).length === 0) return;
     const t = setTimeout(() => setPending({}), PENDING_MOVE_MS);
@@ -118,10 +135,16 @@ export function MapView({
 
   const { grid } = scene;
   const geo = useMemo(() => gridGeometry(grid, scene.width, scene.height), [grid, scene.width, scene.height]);
-  const fog = useMemo(
+  const serverFog = useMemo(
     () => (scene.fogEnabled ? (scene.fog ? FogMask.decode(scene.fog, geo.cols, geo.rows) : new FogMask(geo.cols, geo.rows)) : null),
     [scene.fogEnabled, scene.fog, geo.cols, geo.rows],
   );
+  const fog = useMemo(() => {
+    if (!serverFog || !stroke) return serverFog;
+    const copy = new FogMask(serverFog.cols, serverFog.rows, serverFog.bits.slice());
+    for (const i of stroke.cells) copy.setIndex(i, stroke.reveal);
+    return copy;
+  }, [serverFog, stroke]);
   const fogD = useMemo(() => (fog ? fogPath(fog, geo, grid.size) : ''), [fog, geo, grid.size]);
 
   const fullMap: CameraRect = { x: 0, y: 0, w: scene.width, h: scene.height };
@@ -176,6 +199,36 @@ export function MapView({
     };
   };
 
+  const painting = isGm && (tool === 'reveal' || tool === 'hide') && Boolean(serverFog);
+
+  /** Paints the brush along the line from the last cell to this one, so fast strokes leave no gaps. */
+  const paintTo = (g: Extract<Gesture, { kind: 'paint' }>, to: { col: number; row: number }, first = false) => {
+    const steps = first ? 0 : Math.max(Math.abs(to.col - g.last.col), Math.abs(to.row - g.last.row));
+    const added: number[] = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = steps === 0 ? 1 : i / steps;
+      const col = Math.round(g.last.col + (to.col - g.last.col) * t);
+      const row = Math.round(g.last.row + (to.row - g.last.row) * t);
+      for (const idx of brushCells(geo.cols, geo.rows, col, row, brush)) {
+        g.unsent.add(idx);
+        added.push(idx);
+      }
+    }
+    g.last = to;
+    setStroke((prev) => {
+      const cells = new Set(prev?.cells);
+      for (const idx of added) cells.add(idx);
+      return { reveal: tool === 'reveal', cells };
+    });
+  };
+
+  const flushPaint = (g: Extract<Gesture, { kind: 'paint' }>) => {
+    if (g.unsent.size === 0) return;
+    onPaintFog?.([...g.unsent], tool === 'reveal');
+    g.unsent = new Set();
+    g.sentAt = Date.now();
+  };
+
   const canMove = (t: Token) => isGm || (userId !== undefined && t.ownerUserId === userId);
 
   const cellOf = (x: number, y: number) => ({
@@ -189,10 +242,22 @@ export function MapView({
     pointers.current.set(e.pointerId, p);
     e.currentTarget.setPointerCapture(e.pointerId);
     if (pointers.current.size === 2) {
+      const g = gesture.current;
+      if (g?.kind === 'paint') flushPaint(g);
       setDrag(null);
       return startPinch();
     }
     if (pointers.current.size > 2) return;
+
+    if (painting && e.button === 0) {
+      const m = screenToMap(camRef.current, p.x, p.y);
+      const cell = pointToCell(geo, grid.size, m.x, m.y);
+      const g: Gesture = { kind: 'paint', pointerId: e.pointerId, last: cell, unsent: new Set(), sentAt: Date.now() };
+      gesture.current = g;
+      setStroke(null);
+      paintTo(g, cell, true);
+      return;
+    }
 
     const tokenId = (e.target as Element).closest('[data-token-id]')?.getAttribute('data-token-id');
     const token = tokenId ? scene.tokens.find((t) => t.id === tokenId) : undefined;
@@ -224,6 +289,11 @@ export function MapView({
     if (g.kind === 'pan' && g.pointerId === e.pointerId) {
       if (Math.hypot(p.x - g.sx, p.y - g.sy) > DRAG_THRESHOLD) g.moved = true;
       setCam({ ...g.cam, x: g.cam.x + p.x - g.sx, y: g.cam.y + p.y - g.sy });
+    } else if (g.kind === 'paint' && g.pointerId === e.pointerId) {
+      const m = screenToMap(camRef.current!, p.x, p.y);
+      const cell = pointToCell(geo, grid.size, m.x, m.y);
+      if (cell.col !== g.last.col || cell.row !== g.last.row) paintTo(g, cell);
+      if (Date.now() - g.sentAt > FOG_FLUSH_MS) flushPaint(g);
     } else if (g.kind === 'token' && g.pointerId === e.pointerId) {
       if (!g.movable) return;
       if (!g.moved && Math.hypot(p.x - g.sx, p.y - g.sy) <= DRAG_THRESHOLD) return;
@@ -251,7 +321,9 @@ export function MapView({
         : null;
       return;
     }
-    if (g?.kind === 'token' && g.pointerId === e.pointerId) {
+    if (g?.kind === 'paint' && g.pointerId === e.pointerId) {
+      flushPaint(g);
+    } else if (g?.kind === 'token' && g.pointerId === e.pointerId) {
       if (g.moved && drag) {
         const { col, row } = cellOf(drag.x, drag.y);
         const token = scene.tokens.find((t) => t.id === g.tokenId);
@@ -281,7 +353,7 @@ export function MapView({
     <div className={`map${interactive ? '' : ' map--display'}${scene.imageUrl ? '' : ' map--blank'}`} ref={wrapRef}>
       <svg
         ref={svgRef}
-        className="map__svg"
+        className={`map__svg${painting ? ' map__svg--paint' : ''}`}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -289,6 +361,9 @@ export function MapView({
         onContextMenu={(e) => e.preventDefault()}
       >
         <defs>
+          <clipPath id={`clip-${scene.id}`}>
+            <rect width={scene.width} height={scene.height} />
+          </clipPath>
           <pattern
             id={`grid-${scene.id}`}
             x={geo.originX}
@@ -308,7 +383,7 @@ export function MapView({
               <rect width={scene.width} height={scene.height} className="map__blank" />
             )}
             {grid.visible && <rect width={scene.width} height={scene.height} fill={`url(#grid-${scene.id})`} pointerEvents="none" />}
-            {fog && <path d={fogD} className={`map__fog${isGm ? ' map__fog--gm' : ''}`} />}
+            {fog && <path d={fogD} className={`map__fog${isGm ? ' map__fog--gm' : ''}`} clipPath={`url(#clip-${scene.id})`} />}
             {drag && (
               <rect
                 className="map__drop"

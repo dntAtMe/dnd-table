@@ -6,7 +6,8 @@ import { DiceTray } from '../components/DiceTray';
 import { LogFeed } from '../components/LogFeed';
 import { DisplaysPanel, InviteCode, PartyList } from '../components/Panels';
 import { RollView } from '../components/RollView';
-import { MapView } from '../components/map/MapView';
+import { MapToolbar, type ToolOption } from '../components/map/MapToolbar';
+import { MapView, type MapTool } from '../components/map/MapView';
 import { SceneSettings, ScenesPanel } from '../components/ScenePanels';
 import { AddTokenMenu, TokenInspector } from '../components/TokenPanels';
 import { useGameSocket, type SocketStatus } from '../lib/useGameSocket';
@@ -37,6 +38,13 @@ function Section({ title, children, className = '', tab }: SectionProps) {
 
 type Tab = 'map' | 'dice' | 'log' | 'party';
 
+const PLAYER_TOOLS: ToolOption[] = [{ tool: 'move', label: 'Move' }];
+const GM_TOOLS: ToolOption[] = [
+  { tool: 'move', label: 'Move' },
+  { tool: 'reveal', label: 'Reveal' },
+  { tool: 'hide', label: 'Hide' },
+];
+
 const TAB_LABELS: Record<Tab, string> = { map: 'Map', dice: 'Dice', log: 'Log', party: 'Party' };
 
 function MapEmpty({ isGm }: { isGm: boolean }) {
@@ -57,6 +65,8 @@ export function Campaign({ user }: { user: User }) {
   const [tab, setTab] = useState<Tab>('map');
   const [toast, setToast] = useState<string>();
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
+  const [tool, setTool] = useState<MapTool>('move');
+  const [brush, setBrush] = useState(3);
   const viewRect = useRef<CameraRect | null>(null);
   const onViewChange = useCallback((rect: CameraRect) => {
     viewRect.current = rect;
@@ -196,12 +206,19 @@ export function Campaign({ user }: { user: User }) {
               onSelectToken={setSelectedTokenId}
               onMoveToken={(tokenId, col, row) => send({ type: 'token:move', tokenId, col, row })}
               onViewChange={onViewChange}
+              tool={tool}
+              brush={brush}
+              onPaintFog={(cells, reveal) => send({ type: 'fog:paint', sceneId: scene.id, cells, reveal })}
             >
-              {isGm && (
-                <div className="map-toolbar">
-                  <AddTokenMenu scene={scene} members={state.members} at={viewCentreCell} send={send} />
-                </div>
-              )}
+              <MapToolbar
+                tools={isGm ? (scene.fogEnabled ? GM_TOOLS : GM_TOOLS.filter((t) => t.tool === 'move')) : PLAYER_TOOLS}
+                tool={tool}
+                onTool={setTool}
+                brush={brush}
+                onBrush={setBrush}
+              >
+                {isGm && <AddTokenMenu scene={scene} members={state.members} at={viewCentreCell} send={send} />}
+              </MapToolbar>
             </MapView>
           ) : (
             <MapEmpty isGm={isGm} />

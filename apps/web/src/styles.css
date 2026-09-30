@@ -1859,3 +1859,57 @@ select {
 .btn--danger:hover:not(:disabled) {
   background: rgb(224 106 92 / 0.12);
 }
+
+.map-toolbar__tools {
+  display: flex;
+  gap: 2px;
+}
+
+.tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.tool svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tool:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.tool.is-active {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+
+.map__svg--paint {
+  cursor: crosshair;
+}
+
+.map__svg--paint:active {
+  cursor: crosshair;
+}
+
+@media (max-width: 1280px) {
+  .tool__label {
+    display: none;
+  }
+}
