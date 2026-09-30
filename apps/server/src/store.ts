@@ -145,7 +145,7 @@ export class Store {
         `SELECT c.id, c.name, m.role,
                 (SELECT COUNT(*) FROM campaign_members x WHERE x.campaign_id = c.id) AS member_count
          FROM campaign_members m JOIN campaigns c ON c.id = m.campaign_id
-         WHERE m.user_id = ? ORDER BY c.created_at DESC`,
+         WHERE m.user_id = ? ORDER BY c.rowid DESC`,
       )
       .all(userId) as Row[];
     return rows.map((r) => ({
@@ -175,7 +175,7 @@ export class Store {
     const rows = this.db
       .prepare(
         `SELECT u.id, u.display_name, m.role FROM campaign_members m JOIN users u ON u.id = m.user_id
-         WHERE m.campaign_id = ? ORDER BY m.role = 'gm' DESC, m.joined_at`,
+         WHERE m.campaign_id = ? ORDER BY m.role = 'gm' DESC, m.rowid`,
       )
       .all(campaignId) as Row[];
     return rows.map((r) => ({ userId: r.id as string, name: r.display_name as string, role: r.role as Role }));
@@ -224,7 +224,7 @@ export class Store {
 
   displaysFor(campaignId: string): Display[] {
     const rows = this.db
-      .prepare('SELECT id, name, pairing_code, campaign_id FROM displays WHERE campaign_id = ? ORDER BY created_at')
+      .prepare('SELECT id, name, pairing_code, campaign_id FROM displays WHERE campaign_id = ? ORDER BY rowid')
       .all(campaignId) as Row[];
     return rows.map(Store.toDisplay);
   }
