@@ -1,4 +1,4 @@
-import type { ClientMessage, Member, SceneView, Token } from '@dnd/protocol';
+import type { CharacterRecord, ClientMessage, Member, SceneView, Token } from '@dnd/protocol';
 import { useEffect, useState } from 'react';
 
 type Send = (msg: ClientMessage) => void;
@@ -93,15 +93,19 @@ export function TokenInspector({ token, members, send }: InspectorProps) {
 interface AddTokenProps {
   scene: SceneView;
   members: Member[];
+  characters: CharacterRecord[];
   /** Where to drop the new token (usually the centre of the view). */
   at: () => { col: number; row: number };
   send: Send;
 }
 
-/** "Add token" menu: a generic creature, or a token for each player who doesn't have one here yet. */
-export function AddTokenMenu({ scene, members, at, send }: AddTokenProps) {
+/** "Add token" menu: a creature, a party character not yet on this map, or a plain token for players without one. */
+export function AddTokenMenu({ scene, members, characters, at, send }: AddTokenProps) {
   const [open, setOpen] = useState(false);
-  const playersWithout = members.filter((m) => m.role === 'player' && !scene.tokens.some((t) => t.ownerUserId === m.userId));
+  const charactersOff = characters.filter((c) => !scene.tokens.some((t) => t.characterId === c.id));
+  const playersWithout = members.filter(
+    (m) => m.role === 'player' && !scene.tokens.some((t) => t.ownerUserId === m.userId) && !characters.some((c) => c.ownerUserId === m.userId),
+  );
 
   const add = (name: string, ownerUserId: string | null, hidden: boolean) => {
     const color = TOKEN_COLORS[scene.tokens.length % TOKEN_COLORS.length]!;
@@ -122,6 +126,19 @@ export function AddTokenMenu({ scene, members, at, send }: AddTokenProps) {
           <button type="button" role="menuitem" onClick={() => add(`Hidden ${scene.tokens.length + 1}`, null, true)}>
             Hidden creature
           </button>
+          {charactersOff.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                send({ type: 'character:token', characterId: c.id });
+                setOpen(false);
+              }}
+            >
+              {c.data.name} <span className="muted">(character)</span>
+            </button>
+          ))}
           {playersWithout.map((m) => (
             <button key={m.userId} type="button" role="menuitem" onClick={() => add(m.name, m.userId, false)}>
               {m.name}'s token

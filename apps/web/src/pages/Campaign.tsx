@@ -258,7 +258,7 @@ export function Campaign({ user }: { user: User }) {
                 brush={brush}
                 onBrush={setBrush}
               >
-                {isGm && <AddTokenMenu scene={scene} members={state.members} at={viewCentreCell} send={send} />}
+                {isGm && <AddTokenMenu scene={scene} members={state.members} characters={state.characters} at={viewCentreCell} send={send} />}
                 {isGm && isLive && state.displays.length > 0 && (
                   <button
                     type="button"
