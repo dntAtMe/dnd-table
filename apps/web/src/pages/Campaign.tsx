@@ -12,6 +12,7 @@ import { SceneSettings, ScenesPanel } from '../components/ScenePanels';
 import { AddTokenMenu, TokenInspector } from '../components/TokenPanels';
 import { CharacterCreator } from '../components/character/CharacterCreator';
 import { CharacterPanel } from '../components/character/CharacterSheet';
+import { LevelUp } from '../components/character/LevelUp';
 import { useGameSocket, type SocketStatus } from '../lib/useGameSocket';
 
 const STATUS_TEXT: Record<SocketStatus, string> = {
@@ -70,6 +71,8 @@ export function Campaign({ user }: { user: User }) {
   const [tool, setTool] = useState<MapTool>('move');
   const [brush, setBrush] = useState(3);
   const [creating, setCreating] = useState(false);
+  const [levelingId, setLevelingId] = useState<string | null>(null);
+  const leveling = state.characters.find((c) => c.id === levelingId);
   const viewRect = useRef<CameraRect | null>(null);
   const [followTable, setFollowTable] = useState(false);
   const { hello, scene } = state;
@@ -284,6 +287,8 @@ export function Campaign({ user }: { user: User }) {
         <section className="campaign__sheet" data-tab="sheet">
           {creating ? (
             <CharacterCreator send={send} onDone={() => setCreating(false)} />
+          ) : leveling ? (
+            <LevelUp key={leveling.id} record={leveling} send={send} onDone={() => setLevelingId(null)} />
           ) : (
             <CharacterPanel
               characters={state.characters}
@@ -292,6 +297,7 @@ export function Campaign({ user }: { user: User }) {
               isGm={isGm}
               send={send}
               onCreate={() => setCreating(true)}
+              onLevelUp={(record) => setLevelingId(record.id)}
             />
           )}
         </section>

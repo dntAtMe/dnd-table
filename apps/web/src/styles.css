@@ -3110,3 +3110,7 @@ textarea:focus {
     grid-template-columns: repeat(3, 1fr);
   }
 }
+
+.score-row--compact {
+  grid-template-columns: 1fr 130px 40px 40px;
+}
