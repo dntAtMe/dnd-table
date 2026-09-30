@@ -1,8 +1,8 @@
 import type { CameraRect, SceneView, Token } from '@dnd/protocol';
 import { FogMask, gridGeometry } from '@dnd/rules';
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useElementSize } from '../../lib/useElementSize';
-import { fitRect, visibleRect, zoomAt, type Camera } from './camera';
+import { fitRect, screenToMap, visibleRect, zoomAt, type Camera } from './camera';
 import { fogPath } from './fogPath';
 
 export interface MapViewProps {
@@ -15,10 +15,33 @@ export interface MapViewProps {
   camera?: CameraRect | null;
   /** Called with the visible map area whenever the view moves. */
   onViewChange?: (rect: CameraRect) => void;
+  userId?: string;
+  selectedTokenId?: string | null;
+  onSelectToken?: (id: string | null) => void;
+  onMoveToken?: (id: string, col: number, row: number) => void;
+  /** Overlay controls drawn above the map (toolbars). */
+  children?: ReactNode;
 }
 
+/** Pointer travel (px) before a press on a token becomes a drag rather than a click. */
+const DRAG_THRESHOLD = 4;
+/** How long to show a moved token at its new spot before trusting the server's copy again. */
+const PENDING_MOVE_MS = 1500;
+
 type Gesture =
-  | { kind: 'pan'; pointerId: number; sx: number; sy: number; cam: Camera }
+  | { kind: 'pan'; pointerId: number; sx: number; sy: number; cam: Camera; moved: boolean }
+  | {
+      kind: 'token';
+      pointerId: number;
+      tokenId: string;
+      movable: boolean;
+      /** Grab point relative to the token's top-left, in map pixels. */
+      dx: number;
+      dy: number;
+      sx: number;
+      sy: number;
+      moved: boolean;
+    }
   | { kind: 'pinch'; dist: number; cx: number; cy: number; cam: Camera };
 
 function initials(name: string): string {
@@ -26,15 +49,29 @@ function initials(name: string): string {
   return (words.length > 1 ? words[0]![0]! + words[1]![0]! : name.slice(0, 2)).toUpperCase();
 }
 
-function TokenShape({ token, cell, originX, originY }: { token: Token; cell: number; originX: number; originY: number }) {
+interface TokenShapeProps {
+  token: Token;
+  cell: number;
+  x: number;
+  y: number;
+  selected?: boolean;
+  mine?: boolean;
+  movable?: boolean;
+  dragging?: boolean;
+}
+
+function TokenShape({ token, cell, x, y, selected, mine, movable, dragging }: TokenShapeProps) {
   const d = token.size * cell;
   const r = d / 2 - Math.max(2, cell * 0.06);
+  const classes = ['token'];
+  if (token.hidden) classes.push('token--hidden');
+  if (selected) classes.push('token--selected');
+  if (mine) classes.push('token--mine');
+  if (movable) classes.push('token--movable');
+  if (dragging) classes.push('token--dragging');
   return (
-    <g
-      className={`token${token.hidden ? ' token--hidden' : ''}`}
-      transform={`translate(${originX + token.col * cell} ${originY + token.row * cell})`}
-      data-token-id={token.id}
-    >
+    <g className={classes.join(' ')} transform={`translate(${x} ${y})`} data-token-id={token.id}>
+      {(selected || mine) && <circle cx={d / 2} cy={d / 2} r={r + Math.max(3, cell * 0.07)} className="token__ring" />}
       <circle cx={d / 2} cy={d / 2} r={r} fill={token.color} className="token__disc" />
       <text x={d / 2} y={d / 2} className="token__initials" fontSize={r * 0.8}>
         {initials(token.name)}
@@ -46,7 +83,18 @@ function TokenShape({ token, cell, originX, originY }: { token: Token; cell: num
   );
 }
 
-export function MapView({ scene, isGm, interactive = true, camera, onViewChange }: MapViewProps) {
+export function MapView({
+  scene,
+  isGm,
+  interactive = true,
+  camera,
+  onViewChange,
+  userId,
+  selectedTokenId,
+  onSelectToken,
+  onMoveToken,
+  children,
+}: MapViewProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const size = useElementSize(wrapRef);
@@ -56,6 +104,17 @@ export function MapView({ scene, isGm, interactive = true, camera, onViewChange 
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const gesture = useRef<Gesture | null>(null);
   const fittedScene = useRef<string | null>(null);
+  /** Token being dragged, at its unsnapped top-left in map pixels. */
+  const [drag, setDrag] = useState<{ tokenId: string; x: number; y: number } | null>(null);
+  /** Moves sent but not yet confirmed, so the token doesn't snap back while the server replies. */
+  const [pending, setPending] = useState<Record<string, { col: number; row: number }>>({});
+
+  useEffect(() => setPending({}), [scene.tokens]);
+  useEffect(() => {
+    if (Object.keys(pending).length === 0) return;
+    const t = setTimeout(() => setPending({}), PENDING_MOVE_MS);
+    return () => clearTimeout(t);
+  }, [pending]);
 
   const { grid } = scene;
   const geo = useMemo(() => gridGeometry(grid, scene.width, scene.height), [grid, scene.width, scene.height]);
@@ -117,14 +176,43 @@ export function MapView({ scene, isGm, interactive = true, camera, onViewChange 
     };
   };
 
+  const canMove = (t: Token) => isGm || (userId !== undefined && t.ownerUserId === userId);
+
+  const cellOf = (x: number, y: number) => ({
+    col: Math.round((x - geo.originX) / grid.size),
+    row: Math.round((y - geo.originY) / grid.size),
+  });
+
   const onPointerDown = (e: ReactPointerEvent<SVGSVGElement>) => {
     if (!interactive || !camRef.current) return;
     const p = local(e);
     pointers.current.set(e.pointerId, p);
     e.currentTarget.setPointerCapture(e.pointerId);
-    if (pointers.current.size === 2) return startPinch();
+    if (pointers.current.size === 2) {
+      setDrag(null);
+      return startPinch();
+    }
     if (pointers.current.size > 2) return;
-    gesture.current = { kind: 'pan', pointerId: e.pointerId, sx: p.x, sy: p.y, cam: camRef.current };
+
+    const tokenId = (e.target as Element).closest('[data-token-id]')?.getAttribute('data-token-id');
+    const token = tokenId ? scene.tokens.find((t) => t.id === tokenId) : undefined;
+    if (token && e.button === 0) {
+      const m = screenToMap(camRef.current, p.x, p.y);
+      const pos = pending[token.id] ?? token;
+      gesture.current = {
+        kind: 'token',
+        pointerId: e.pointerId,
+        tokenId: token.id,
+        movable: canMove(token),
+        dx: m.x - (geo.originX + pos.col * grid.size),
+        dy: m.y - (geo.originY + pos.row * grid.size),
+        sx: p.x,
+        sy: p.y,
+        moved: false,
+      };
+      return;
+    }
+    gesture.current = { kind: 'pan', pointerId: e.pointerId, sx: p.x, sy: p.y, cam: camRef.current, moved: false };
   };
 
   const onPointerMove = (e: ReactPointerEvent<SVGSVGElement>) => {
@@ -134,7 +222,14 @@ export function MapView({ scene, isGm, interactive = true, camera, onViewChange 
     const g = gesture.current;
     if (!g) return;
     if (g.kind === 'pan' && g.pointerId === e.pointerId) {
+      if (Math.hypot(p.x - g.sx, p.y - g.sy) > DRAG_THRESHOLD) g.moved = true;
       setCam({ ...g.cam, x: g.cam.x + p.x - g.sx, y: g.cam.y + p.y - g.sy });
+    } else if (g.kind === 'token' && g.pointerId === e.pointerId) {
+      if (!g.movable) return;
+      if (!g.moved && Math.hypot(p.x - g.sx, p.y - g.sy) <= DRAG_THRESHOLD) return;
+      g.moved = true;
+      const m = screenToMap(camRef.current!, p.x, p.y);
+      setDrag({ tokenId: g.tokenId, x: m.x - g.dx, y: m.y - g.dy });
     } else if (g.kind === 'pinch' && pointers.current.size >= 2) {
       const [a, b] = [...pointers.current.values()];
       const dist = Math.hypot(a!.x - b!.x, a!.y - b!.y);
@@ -152,9 +247,24 @@ export function MapView({ scene, isGm, interactive = true, camera, onViewChange 
       // Lifting one finger of a pinch continues as a pan with the other.
       const [id, p] = [...pointers.current.entries()][0] ?? [];
       gesture.current = id !== undefined && p && camRef.current
-        ? { kind: 'pan', pointerId: id, sx: p.x, sy: p.y, cam: camRef.current }
+        ? { kind: 'pan', pointerId: id, sx: p.x, sy: p.y, cam: camRef.current, moved: true }
         : null;
       return;
+    }
+    if (g?.kind === 'token' && g.pointerId === e.pointerId) {
+      if (g.moved && drag) {
+        const { col, row } = cellOf(drag.x, drag.y);
+        const token = scene.tokens.find((t) => t.id === g.tokenId);
+        if (token && (col !== token.col || row !== token.row)) {
+          setPending((prev) => ({ ...prev, [g.tokenId]: { col, row } }));
+          onMoveToken?.(g.tokenId, col, row);
+        }
+      } else if (!g.moved) {
+        onSelectToken?.(isGm || g.movable ? g.tokenId : null);
+      }
+      setDrag(null);
+    } else if (g?.kind === 'pan' && !g.moved && g.pointerId === e.pointerId) {
+      onSelectToken?.(null);
     }
     if (pointers.current.size === 0) gesture.current = null;
   };
@@ -199,13 +309,38 @@ export function MapView({ scene, isGm, interactive = true, camera, onViewChange 
             )}
             {grid.visible && <rect width={scene.width} height={scene.height} fill={`url(#grid-${scene.id})`} pointerEvents="none" />}
             {fog && <path d={fogD} className={`map__fog${isGm ? ' map__fog--gm' : ''}`} />}
-            {scene.tokens.map((t) => (
-              <TokenShape key={t.id} token={t} cell={grid.size} originX={geo.originX} originY={geo.originY} />
-            ))}
+            {drag && (
+              <rect
+                className="map__drop"
+                x={geo.originX + cellOf(drag.x, drag.y).col * grid.size}
+                y={geo.originY + cellOf(drag.x, drag.y).row * grid.size}
+                width={(scene.tokens.find((t) => t.id === drag.tokenId)?.size ?? 1) * grid.size}
+                height={(scene.tokens.find((t) => t.id === drag.tokenId)?.size ?? 1) * grid.size}
+                strokeWidth={2 / k}
+              />
+            )}
+            {scene.tokens.map((t) => {
+              const dragging = drag?.tokenId === t.id;
+              const pos = pending[t.id] ?? t;
+              return (
+                <TokenShape
+                  key={t.id}
+                  token={t}
+                  cell={grid.size}
+                  x={dragging ? drag.x : geo.originX + pos.col * grid.size}
+                  y={dragging ? drag.y : geo.originY + pos.row * grid.size}
+                  selected={t.id === selectedTokenId}
+                  mine={!isGm && userId !== undefined && t.ownerUserId === userId}
+                  movable={interactive && canMove(t)}
+                  dragging={dragging}
+                />
+              );
+            })}
             <rect width={scene.width} height={scene.height} className="map__frame" strokeWidth={2 / k} />
           </g>
         )}
       </svg>
+      {children}
       {interactive && (
         <div className="map__zoom">
           <button type="button" onClick={() => zoomBy(1.25)} aria-label="Zoom in">

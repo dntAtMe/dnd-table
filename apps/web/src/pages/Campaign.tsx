@@ -1,5 +1,6 @@
-import type { User } from '@dnd/protocol';
-import { useEffect, useState, type ReactNode } from 'react';
+import type { CameraRect, User } from '@dnd/protocol';
+import { gridGeometry, pointToCell } from '@dnd/rules';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router';
 import { DiceTray } from '../components/DiceTray';
 import { LogFeed } from '../components/LogFeed';
@@ -7,6 +8,7 @@ import { DisplaysPanel, InviteCode, PartyList } from '../components/Panels';
 import { RollView } from '../components/RollView';
 import { MapView } from '../components/map/MapView';
 import { SceneSettings, ScenesPanel } from '../components/ScenePanels';
+import { AddTokenMenu, TokenInspector } from '../components/TokenPanels';
 import { useGameSocket, type SocketStatus } from '../lib/useGameSocket';
 
 const STATUS_TEXT: Record<SocketStatus, string> = {
@@ -54,8 +56,53 @@ export function Campaign({ user }: { user: User }) {
   const { state, send } = useGameSocket(`campaign=${encodeURIComponent(id)}`);
   const [tab, setTab] = useState<Tab>('map');
   const [toast, setToast] = useState<string>();
-  const { hello } = state;
+  const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
+  const viewRect = useRef<CameraRect | null>(null);
+  const onViewChange = useCallback((rect: CameraRect) => {
+    viewRect.current = rect;
+  }, []);
+  const { hello, scene } = state;
   const isGm = hello?.you.role === 'gm';
+  const selectedToken = scene?.tokens.find((t) => t.id === selectedTokenId) ?? null;
+
+  // GM shortcut: Delete/Backspace removes the selected token.
+  useEffect(() => {
+    if (!isGm || !selectedToken) return;
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('input, textarea, select, [contenteditable]')) return;
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        send({ type: 'token:delete', tokenId: selectedToken.id });
+      } else if (e.key === 'Escape') {
+        setSelectedTokenId(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isGm, selectedToken, send]);
+
+  /** Cell at the centre of what the GM is looking at, for dropping new tokens. */
+  const viewCentreCell = () => {
+    if (!scene) return { col: 0, row: 0 };
+    const r = viewRect.current ?? { x: 0, y: 0, w: scene.width, h: scene.height };
+    const geo = gridGeometry(scene.grid, scene.width, scene.height);
+    const centre = pointToCell(geo, scene.grid.size, r.x + r.w / 2, r.y + r.h / 2);
+    // Spiral outwards to the nearest cell no token covers, so new tokens don't stack.
+    const taken = (c: number, rr: number) =>
+      scene.tokens.some((t) => c >= t.col && c < t.col + t.size && rr >= t.row && rr < t.row + t.size);
+    for (let ring = 0; ring < 20; ring++) {
+      for (let dr = -ring; dr <= ring; dr++) {
+        for (let dc = -ring; dc <= ring; dc++) {
+          if (Math.max(Math.abs(dc), Math.abs(dr)) !== ring) continue;
+          const col = centre.col + dc;
+          const row = centre.row + dr;
+          if (col >= 0 && row >= 0 && col < geo.cols && row < geo.rows && !taken(col, row)) return { col, row };
+        }
+      }
+    }
+    return centre;
+  };
 
   useEffect(() => {
     if (!state.error) return;
@@ -116,6 +163,11 @@ export function Campaign({ user }: { user: User }) {
               />
             </Section>
           )}
+          {isGm && selectedToken && (
+            <Section title="Token">
+              <TokenInspector key={selectedToken.id} token={selectedToken} members={state.members} send={send} />
+            </Section>
+          )}
           {isGm && state.scene && (
             <Section title="Scene settings">
               <SceneSettings key={state.scene.id} scene={state.scene} isLive={state.scene.id === state.activeSceneId} send={send} />
@@ -135,7 +187,25 @@ export function Campaign({ user }: { user: User }) {
         </aside>
 
         <main className="campaign__map" data-tab="map">
-          {state.scene ? <MapView scene={state.scene} isGm={isGm} /> : <MapEmpty isGm={isGm} />}
+          {scene ? (
+            <MapView
+              scene={scene}
+              isGm={isGm}
+              userId={hello.you.userId}
+              selectedTokenId={selectedTokenId}
+              onSelectToken={setSelectedTokenId}
+              onMoveToken={(tokenId, col, row) => send({ type: 'token:move', tokenId, col, row })}
+              onViewChange={onViewChange}
+            >
+              {isGm && (
+                <div className="map-toolbar">
+                  <AddTokenMenu scene={scene} members={state.members} at={viewCentreCell} send={send} />
+                </div>
+              )}
+            </MapView>
+          ) : (
+            <MapEmpty isGm={isGm} />
+          )}
           {isGm && state.scene && state.scene.id !== state.activeSceneId && (
             <div className="map-banner">
               <span>Preparing: players can't see this scene</span>
