@@ -111,6 +111,9 @@ function clean(s) {
 const byIndex = (list) => Object.fromEntries(list.map((x) => [x.index, x]));
 const camel = (s) => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 const skillId = (profIndex) => camel(profIndex.replace(/^skill-/, ''));
+let skillIndexes = new Set();
+/** Skill references come as proficiencies ("skill-insight") or as skills ("insight"). */
+const skillRefs = (options) => refs(options).map((r) => r.replace(/^skill-/, '')).filter((r) => skillIndexes.has(r)).map(camel);
 const compact = (obj) => Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined && v !== null));
 
 /** Structured starting-equipment choice: options A/B/C, each a list of items plus coins (in GP). */
@@ -171,6 +174,7 @@ buildVocabulary(
 );
 
 const proficiencies = byIndex(raw.Proficiencies);
+skillIndexes = new Set(raw.Skills.map((s) => s.index));
 const equipmentByIndex = byIndex(raw.Equipment);
 
 // Weapons & armor
@@ -257,7 +261,7 @@ const classes = raw.Classes.map((c) => {
       else tools.push(toolName(i));
     }
   }
-  const skillChoice = c.proficiency_choices.find((pc) => refs(pc).some((r) => r.startsWith('skill-')));
+  const skillChoice = c.proficiency_choices.find((pc) => skillRefs(pc).length > 0 || /skills?/i.test(pc.desc ?? ''));
   const otherChoices = c.proficiency_choices.filter((pc) => pc !== skillChoice).map((pc) => clean(pc.desc));
   const levels = (levelsByClass[c.index] ?? [])
     .sort((a, b) => a.level - b.level)
@@ -287,7 +291,7 @@ const classes = raw.Classes.map((c) => {
     savingThrows: c.saving_throws.map((s) => s.index),
     skillChoice: skillChoice && {
       choose: skillChoice.choose,
-      from: refs(skillChoice).filter((r) => r.startsWith('skill-')).map(skillId),
+      from: skillRefs(skillChoice),
     },
     otherProficiencyChoices: otherChoices.length ? otherChoices : undefined,
     armorTraining: [...armorTraining],
@@ -329,7 +333,7 @@ const traits = raw.Traits.map((t) =>
     description: clean(t.description),
     speed: t.speed,
     skillChoice: t.proficiency_choices
-      ? { choose: t.proficiency_choices.choose, from: refs(t.proficiency_choices).filter((r) => r.startsWith('skill-')).map(skillId) }
+      ? { choose: t.proficiency_choices.choose, from: skillRefs(t.proficiency_choices) }
       : undefined,
     spells: t.spells?.map((s) => s.index ?? s.spell?.index).filter(Boolean),
   }),
