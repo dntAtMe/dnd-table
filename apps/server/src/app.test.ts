@@ -1,4 +1,7 @@
+import { mkdtempSync, rmSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import type { ServerMessage } from '@dnd/protocol';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
@@ -9,25 +12,32 @@ type App = Awaited<ReturnType<typeof buildApp>>;
 
 let app: App;
 let base: string;
+let uploadsDir: string;
 
 beforeEach(async () => {
-  app = await buildApp({ db: openDb(':memory:') });
+  uploadsDir = mkdtempSync(path.join(tmpdir(), 'dnd-table-test-'));
+  app = await buildApp({ db: openDb(':memory:'), uploadsDir });
   await app.listen({ port: 0, host: '127.0.0.1' });
   base = `127.0.0.1:${(app.server.address() as AddressInfo).port}`;
 });
 
 afterEach(async () => {
   await app.close();
+  rmSync(uploadsDir, { recursive: true, force: true });
 });
 
 class Client {
   cookie = '';
 
   async call<T = any>(method: string, path: string, body?: unknown): Promise<{ status: number; data: T }> {
+    const raw = body instanceof Uint8Array;
     const res = await fetch(`http://${base}${path}`, {
       method,
-      headers: { ...(body !== undefined && { 'content-type': 'application/json' }), cookie: this.cookie },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: {
+        ...(body !== undefined && { 'content-type': raw ? 'application/octet-stream' : 'application/json' }),
+        cookie: this.cookie,
+      },
+      body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
     });
     const setCookie = res.headers.get('set-cookie');
     if (setCookie) this.cookie = setCookie.split(';')[0]!;
@@ -152,7 +162,7 @@ describe('auth', () => {
 
   it('requires the signup code when configured', async () => {
     await app.close();
-    app = await buildApp({ db: openDb(':memory:'), signupCode: 'tavern' });
+    app = await buildApp({ db: openDb(':memory:'), uploadsDir, signupCode: 'tavern' });
     await app.listen({ port: 0, host: '127.0.0.1' });
     base = `127.0.0.1:${(app.server.address() as AddressInfo).port}`;
 
@@ -270,5 +280,29 @@ describe('table displays', () => {
     expect(await bogus.waitClosed()).toBe(4401);
     tv2.close();
     gmSock.close();
+  });
+});
+
+// 1×1 transparent PNG.
+const PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+  'base64',
+);
+
+describe('uploads', () => {
+  it('stores images from the GM and serves them as static files', async () => {
+    const { gm, player, campaignId } = await campaignWithPlayer();
+    const up = await gm.call('POST', `/api/campaigns/${campaignId}/files`, new Uint8Array(PNG));
+    expect(up.status).toBe(200);
+    expect(up.data.url).toMatch(/^\/files\/[0-9a-f-]{36}\.png$/);
+
+    const res = await fetch(`http://${base}${up.data.url}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/png');
+    expect(Buffer.from(await res.arrayBuffer()).equals(PNG)).toBe(true);
+
+    expect((await player.call('POST', `/api/campaigns/${campaignId}/files`, new Uint8Array(PNG))).status).toBe(403);
+    const notImage = await gm.call('POST', `/api/campaigns/${campaignId}/files`, new TextEncoder().encode('<svg/>'));
+    expect(notImage.status).toBe(415);
   });
 });

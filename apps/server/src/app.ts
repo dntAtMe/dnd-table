@@ -1,4 +1,7 @@
-import { existsSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import cookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
@@ -19,9 +22,12 @@ import type { DB } from './db';
 import { Hub } from './hub';
 import { hashPassword, normalizeCode, verifyPassword } from './security';
 import { Store } from './store';
+import { MAX_UPLOAD_BYTES, UPLOAD_MIME_TYPES, sniffImage } from './uploads';
 
 export interface AppOptions {
   db: DB;
+  /** Where uploaded images are written; served under /files/. */
+  uploadsDir: string;
   /** Built web client to serve (apps/web/dist). Omitted in dev, where Vite serves it. */
   webDist?: string;
   /** Required to register when set, so an internet-facing server isn't open to strangers. */
@@ -54,7 +60,22 @@ export async function buildApp(opts: AppOptions) {
   const hub = new Hub(store);
   app.addHook('onClose', async () => hub.close());
 
+  mkdirSync(opts.uploadsDir, { recursive: true });
+
   await app.register(cookie);
+  // Uploads arrive as the raw request body (fetch(url, { body: file })), no multipart needed.
+  app.addContentTypeParser(
+    [...UPLOAD_MIME_TYPES, 'application/octet-stream'],
+    { parseAs: 'buffer', bodyLimit: MAX_UPLOAD_BYTES },
+    (_req, body, done) => done(null, body),
+  );
+  await app.register(fastifyStatic, {
+    root: opts.uploadsDir,
+    prefix: '/files/',
+    decorateReply: false,
+    immutable: true,
+    maxAge: '365d',
+  });
   await app.register(websocket, { options: { maxPayload: 64 * 1024 } });
 
   app.setErrorHandler((err: Error & { statusCode?: number }, _req, reply) => {
@@ -145,6 +166,20 @@ export async function buildApp(opts: AppOptions) {
     if (!campaign) throw new HttpError(404, 'No campaign with that invite code');
     if (store.addPlayer(campaign.id, user.id)) hub.membersChanged(campaign.id);
     return { id: campaign.id };
+  });
+
+  // ---------- uploads ----------
+
+  app.post<{ Params: { id: string } }>('/api/campaigns/:id/files', async (req) => {
+    requireGm(req, req.params.id);
+    if (!Buffer.isBuffer(req.body)) throw new HttpError(415, 'Upload a PNG, JPEG, WebP or GIF image');
+    const kind = sniffImage(req.body);
+    if (!kind) throw new HttpError(415, 'Upload a PNG, JPEG, WebP or GIF image');
+    const id = randomUUID();
+    const filename = `${id}.${kind.ext}`;
+    await writeFile(path.join(opts.uploadsDir, filename), req.body);
+    store.addFile({ id, campaignId: req.params.id, filename, mime: kind.mime, bytes: req.body.length });
+    return { id, url: `/files/${filename}` };
   });
 
   // ---------- table displays ----------

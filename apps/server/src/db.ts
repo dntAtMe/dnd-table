@@ -53,6 +53,16 @@ const MIGRATIONS = [
   );
   CREATE INDEX log_entries_by_campaign ON log_entries (campaign_id, id);
   `,
+  `
+  CREATE TABLE files (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    filename TEXT NOT NULL,
+    mime TEXT NOT NULL,
+    bytes INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT ${NOW}
+  );
+  `,
 ];
 
 export function openDb(file: string): DB {

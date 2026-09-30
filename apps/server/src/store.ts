@@ -24,6 +24,15 @@ export interface Display {
   campaignId: string | null;
 }
 
+export interface StoredFile {
+  id: string;
+  campaignId: string;
+  /** Name on disk inside the uploads directory; also its public path under /files/. */
+  filename: string;
+  mime: string;
+  bytes: number;
+}
+
 type Row = Record<string, unknown>;
 
 function isUniqueViolation(err: unknown): boolean {
@@ -226,6 +235,29 @@ export class Store {
         if (!isUniqueViolation(err)) throw err;
       }
     }
+  }
+
+  // ---------- files ----------
+
+  addFile(file: StoredFile): void {
+    this.db
+      .prepare('INSERT INTO files (id, campaign_id, filename, mime, bytes) VALUES (?, ?, ?, ?, ?)')
+      .run(file.id, file.campaignId, file.filename, file.mime, file.bytes);
+  }
+
+  getFile(id: string): StoredFile | undefined {
+    const row = this.db.prepare('SELECT id, campaign_id, filename, mime, bytes FROM files WHERE id = ?').get(id) as
+      | Row
+      | undefined;
+    return (
+      row && {
+        id: row.id as string,
+        campaignId: row.campaign_id as string,
+        filename: row.filename as string,
+        mime: row.mime as string,
+        bytes: Number(row.bytes),
+      }
+    );
   }
 
   // ---------- log ----------

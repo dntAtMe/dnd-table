@@ -15,6 +15,7 @@ const dataDir = path.resolve(repoRoot, process.env.DATA_DIR ?? 'data');
 const db = openDb(path.join(dataDir, 'dnd-table.db'));
 const app = await buildApp({
   db,
+  uploadsDir: path.join(dataDir, 'uploads'),
   webDist: production ? path.join(repoRoot, 'apps/web/dist') : undefined,
   signupCode: process.env.SIGNUP_CODE || undefined,
   secureCookies: process.env.COOKIE_SECURE === 'true',
