@@ -1,11 +1,12 @@
 import type { CameraRect, SceneView, Token } from '@dnd/protocol';
-import { FogMask, brushCells, gridGeometry, pointToCell } from '@dnd/rules';
+import { FogMask, brushCells, gridDistanceFeet, gridGeometry, pointToCell } from '@dnd/rules';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useElementSize } from '../../lib/useElementSize';
+import type { Ping } from '../../lib/useGameSocket';
 import { fitRect, screenToMap, visibleRect, zoomAt, type Camera } from './camera';
 import { fogPath } from './fogPath';
 
-export type MapTool = 'move' | 'reveal' | 'hide';
+export type MapTool = 'move' | 'reveal' | 'hide' | 'ruler' | 'ping';
 
 export interface MapViewProps {
   scene: SceneView;
@@ -25,6 +26,8 @@ export interface MapViewProps {
   /** Fog brush diameter in cells. */
   brush?: number;
   onPaintFog?: (cells: number[], reveal: boolean) => void;
+  pings?: Ping[];
+  onPing?: (x: number, y: number) => void;
   /** Overlay controls drawn above the map (toolbars). */
   children?: ReactNode;
 }
@@ -51,7 +54,23 @@ type Gesture =
       moved: boolean;
     }
   | { kind: 'paint'; pointerId: number; last: { col: number; row: number }; unsent: Set<number>; sentAt: number }
+  | { kind: 'ruler'; pointerId: number }
   | { kind: 'pinch'; dist: number; cx: number; cy: number; cam: Camera };
+
+type CellPos = { col: number; row: number };
+
+/** Text drawn at a constant on-screen size regardless of zoom. */
+function MapLabel({ x, y, k, text, className = '' }: { x: number; y: number; k: number; text: string; className?: string }) {
+  const w = text.length * 8 + 16;
+  return (
+    <g transform={`translate(${x} ${y}) scale(${1 / k})`} className={`map-label ${className}`} pointerEvents="none">
+      <rect x={-w / 2} y={-30} width={w} height={22} rx={11} />
+      <text x={0} y={-19}>
+        {text}
+      </text>
+    </g>
+  );
+}
 
 function initials(name: string): string {
   const words = name.trim().split(/\s+/);
@@ -105,6 +124,8 @@ export function MapView({
   tool = 'move',
   brush = 1,
   onPaintFog,
+  pings = [],
+  onPing,
   children,
 }: MapViewProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -122,6 +143,7 @@ export function MapView({
   const [pending, setPending] = useState<Record<string, { col: number; row: number }>>({});
 
   useEffect(() => setPending({}), [scene.tokens]);
+  const [ruler, setRuler] = useState<{ from: CellPos; to: CellPos } | null>(null);
   /** Cells painted in the current stroke, shown before the server echoes them back. */
   const [stroke, setStroke] = useState<{ reveal: boolean; cells: Set<number> } | null>(null);
   useEffect(() => {
@@ -259,6 +281,19 @@ export function MapView({
       return;
     }
 
+    if ((tool === 'ruler' || tool === 'ping') && e.button === 0) {
+      const m = screenToMap(camRef.current, p.x, p.y);
+      if (tool === 'ping') {
+        onPing?.(m.x, m.y);
+        gesture.current = null;
+        return;
+      }
+      const cell = pointToCell(geo, grid.size, m.x, m.y);
+      setRuler({ from: cell, to: cell });
+      gesture.current = { kind: 'ruler', pointerId: e.pointerId };
+      return;
+    }
+
     const tokenId = (e.target as Element).closest('[data-token-id]')?.getAttribute('data-token-id');
     const token = tokenId ? scene.tokens.find((t) => t.id === tokenId) : undefined;
     if (token && e.button === 0) {
@@ -289,6 +324,10 @@ export function MapView({
     if (g.kind === 'pan' && g.pointerId === e.pointerId) {
       if (Math.hypot(p.x - g.sx, p.y - g.sy) > DRAG_THRESHOLD) g.moved = true;
       setCam({ ...g.cam, x: g.cam.x + p.x - g.sx, y: g.cam.y + p.y - g.sy });
+    } else if (g.kind === 'ruler' && g.pointerId === e.pointerId) {
+      const m = screenToMap(camRef.current!, p.x, p.y);
+      const to = pointToCell(geo, grid.size, m.x, m.y);
+      setRuler((r) => (r && (r.to.col !== to.col || r.to.row !== to.row) ? { ...r, to } : r));
     } else if (g.kind === 'paint' && g.pointerId === e.pointerId) {
       const m = screenToMap(camRef.current!, p.x, p.y);
       const cell = pointToCell(geo, grid.size, m.x, m.y);
@@ -347,6 +386,12 @@ export function MapView({
   };
 
   const k = cam?.k ?? 1;
+  const cellCentre = (c: CellPos) => ({
+    x: geo.originX + (c.col + 0.5) * grid.size,
+    y: geo.originY + (c.row + 0.5) * grid.size,
+  });
+  const dragToken = drag ? scene.tokens.find((t) => t.id === drag.tokenId) : undefined;
+  const dragCell = drag ? cellOf(drag.x, drag.y) : undefined;
   const transform = cam ? `translate(${cam.x}px, ${cam.y}px) scale(${cam.k})` : undefined;
 
   return (
@@ -359,6 +404,13 @@ export function MapView({
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onContextMenu={(e) => e.preventDefault()}
+        onDoubleClick={(e) => {
+          if (!interactive || !camRef.current || tool !== 'move') return;
+          if ((e.target as Element).closest('[data-token-id]')) return;
+          const p = local(e);
+          const m = screenToMap(camRef.current, p.x, p.y);
+          onPing?.(m.x, m.y);
+        }}
       >
         <defs>
           <clipPath id={`clip-${scene.id}`}>
@@ -412,6 +464,43 @@ export function MapView({
               );
             })}
             <rect width={scene.width} height={scene.height} className="map__frame" strokeWidth={2 / k} />
+            {dragToken && dragCell && drag && (dragCell.col !== dragToken.col || dragCell.row !== dragToken.row) && (
+              <MapLabel
+                x={geo.originX + (dragCell.col + dragToken.size / 2) * grid.size}
+                y={geo.originY + dragCell.row * grid.size}
+                k={k}
+                text={`${gridDistanceFeet(dragToken, dragCell, grid.feetPerCell)} ft`}
+              />
+            )}
+            {ruler && (
+              <g className="ruler" pointerEvents="none">
+                <line
+                  x1={cellCentre(ruler.from).x}
+                  y1={cellCentre(ruler.from).y}
+                  x2={cellCentre(ruler.to).x}
+                  y2={cellCentre(ruler.to).y}
+                  strokeWidth={3 / k}
+                />
+                <circle cx={cellCentre(ruler.from).x} cy={cellCentre(ruler.from).y} r={5 / k} />
+                <circle cx={cellCentre(ruler.to).x} cy={cellCentre(ruler.to).y} r={5 / k} />
+                <MapLabel
+                  x={cellCentre(ruler.to).x}
+                  y={cellCentre(ruler.to).y - 6 / k}
+                  k={k}
+                  text={`${gridDistanceFeet(ruler.from, ruler.to, grid.feetPerCell)} ft`}
+                />
+              </g>
+            )}
+            {pings
+              .filter((p) => p.sceneId === scene.id)
+              .map((p) => (
+                <g key={p.id} transform={`translate(${p.x} ${p.y}) scale(${1 / k})`} className={`ping ping--${p.role}`} pointerEvents="none">
+                  <circle r={10} className="ping__dot" />
+                  <circle r={10} className="ping__wave" />
+                  <circle r={10} className="ping__wave ping__wave--late" />
+                  <text y={-22}>{p.name}</text>
+                </g>
+              ))}
           </g>
         )}
       </svg>

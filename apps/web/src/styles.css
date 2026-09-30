@@ -1913,3 +1913,74 @@ select {
     display: none;
   }
 }
+
+/* ---------- ruler, labels, pings ---------- */
+.map-label rect {
+  fill: rgb(20 16 12 / 0.9);
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+
+.map-label text {
+  fill: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+.ruler line {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-dasharray: 0.01 0;
+}
+
+.ruler circle {
+  fill: var(--accent);
+}
+
+.ping {
+  --ping: var(--accent);
+}
+
+.ping--gm {
+  --ping: var(--gm);
+}
+
+.ping__dot {
+  fill: var(--ping);
+}
+
+.ping__wave {
+  fill: none;
+  stroke: var(--ping);
+  stroke-width: 3;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ping-wave 1.2s ease-out 2;
+}
+
+.ping__wave--late {
+  animation-delay: 0.4s;
+}
+
+.ping text {
+  fill: #fff;
+  font-size: 13px;
+  font-weight: 650;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: rgb(0 0 0 / 0.8);
+  stroke-width: 3px;
+}
+
+@keyframes ping-wave {
+  from {
+    transform: scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: scale(5);
+    opacity: 0;
+  }
+}

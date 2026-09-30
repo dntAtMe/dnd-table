@@ -38,12 +38,12 @@ function Section({ title, children, className = '', tab }: SectionProps) {
 
 type Tab = 'map' | 'dice' | 'log' | 'party';
 
-const PLAYER_TOOLS: ToolOption[] = [{ tool: 'move', label: 'Move' }];
-const GM_TOOLS: ToolOption[] = [
+const PLAYER_TOOLS: ToolOption[] = [
   { tool: 'move', label: 'Move' },
-  { tool: 'reveal', label: 'Reveal' },
-  { tool: 'hide', label: 'Hide' },
+  { tool: 'ruler', label: 'Measure' },
+  { tool: 'ping', label: 'Ping' },
 ];
+const GM_TOOLS: ToolOption[] = [...PLAYER_TOOLS, { tool: 'reveal', label: 'Reveal' }, { tool: 'hide', label: 'Hide' }];
 
 const TAB_LABELS: Record<Tab, string> = { map: 'Map', dice: 'Dice', log: 'Log', party: 'Party' };
 
@@ -209,9 +209,11 @@ export function Campaign({ user }: { user: User }) {
               tool={tool}
               brush={brush}
               onPaintFog={(cells, reveal) => send({ type: 'fog:paint', sceneId: scene.id, cells, reveal })}
+              pings={state.pings}
+              onPing={(x, y) => send({ type: 'ping', sceneId: scene.id, x, y })}
             >
               <MapToolbar
-                tools={isGm ? (scene.fogEnabled ? GM_TOOLS : GM_TOOLS.filter((t) => t.tool === 'move')) : PLAYER_TOOLS}
+                tools={isGm && scene.fogEnabled ? GM_TOOLS : PLAYER_TOOLS}
                 tool={tool}
                 onTool={setTool}
                 brush={brush}
