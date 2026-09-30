@@ -1,0 +1,17 @@
+{
+  "name": "dnd-table",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @dnd/server --filter @dnd/web run dev",
+    "build": "pnpm --filter @dnd/web run build",
+    "start": "pnpm --filter @dnd/server run start",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}
