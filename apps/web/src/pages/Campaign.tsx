@@ -5,6 +5,7 @@ import { DiceTray } from '../components/DiceTray';
 import { LogFeed } from '../components/LogFeed';
 import { DisplaysPanel, InviteCode, PartyList } from '../components/Panels';
 import { RollView } from '../components/RollView';
+import { MapView } from '../components/map/MapView';
 import { useGameSocket, type SocketStatus } from '../lib/useGameSocket';
 
 const STATUS_TEXT: Record<SocketStatus, string> = {
@@ -31,12 +32,26 @@ function Section({ title, children, className = '', tab }: SectionProps) {
   );
 }
 
-type Tab = 'dice' | 'log' | 'party';
+type Tab = 'map' | 'dice' | 'log' | 'party';
+
+const TAB_LABELS: Record<Tab, string> = { map: 'Map', dice: 'Dice', log: 'Log', party: 'Party' };
+
+function MapEmpty({ isGm }: { isGm: boolean }) {
+  return (
+    <div className="map-empty">
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <path d="M6 14 22 8l20 6 16-6v42l-16 6-20-6-16 6z" />
+        <path d="M22 8v42M42 14v42" />
+      </svg>
+      <p>{isGm ? 'Create a scene in the sidebar to get started.' : 'No map in play yet.'}</p>
+    </div>
+  );
+}
 
 export function Campaign({ user }: { user: User }) {
   const { id = '' } = useParams();
   const { state, send } = useGameSocket(`campaign=${encodeURIComponent(id)}`);
-  const [tab, setTab] = useState<Tab>('dice');
+  const [tab, setTab] = useState<Tab>('map');
   const [toast, setToast] = useState<string>();
   const { hello } = state;
   const isGm = hello?.you.role === 'gm';
@@ -102,22 +117,28 @@ export function Campaign({ user }: { user: User }) {
           )}
         </aside>
 
-        <Section title="Log" className="campaign__log" tab="log">
-          <LogFeed log={state.log} myUserId={hello.you.userId} isGm={isGm} onSend={send} />
-        </Section>
+        <main className="campaign__map" data-tab="map">
+          {state.scene ? <MapView scene={state.scene} isGm={isGm} /> : <MapEmpty isGm={isGm} />}
+        </main>
 
-        <Section title="Dice" className="campaign__dice" tab="dice">
-          <DiceTray isGm={isGm} disabled={state.status !== 'open'} onRoll={send} />
-          <div className="campaign__last">
-            <LastRoll state={state} userId={hello.you.userId} />
-          </div>
-        </Section>
+        <div className="campaign__right">
+          <Section title="Dice" className="campaign__dice" tab="dice">
+            <DiceTray isGm={isGm} disabled={state.status !== 'open'} onRoll={send} />
+            <div className="campaign__last">
+              <LastRoll state={state} userId={hello.you.userId} />
+            </div>
+          </Section>
+
+          <Section title="Log" className="campaign__log" tab="log">
+            <LogFeed log={state.log} myUserId={hello.you.userId} isGm={isGm} onSend={send} />
+          </Section>
+        </div>
       </div>
 
       <nav className="tabbar" aria-label="Sections">
-        {(['dice', 'log', 'party'] as const).map((t) => (
+        {(['map', 'dice', 'log', 'party'] as const).map((t) => (
           <button key={t} type="button" className={tab === t ? 'is-active' : ''} onClick={() => setTab(t)}>
-            {t === 'dice' ? 'Dice' : t === 'log' ? 'Log' : 'Party'}
+            {t === 'party' && isGm ? 'Manage' : TAB_LABELS[t]}
           </button>
         ))}
       </nav>

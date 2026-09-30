@@ -525,7 +525,7 @@ label {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 400px;
+  grid-template-columns: 280px minmax(0, 1fr) 380px;
   gap: 1px;
   background: var(--border);
 }
@@ -559,12 +559,29 @@ label {
   border-top: 1px solid var(--border);
 }
 
-.campaign__log {
-  min-height: 0;
+.campaign__map {
+  position: relative;
+  min-width: 0;
+}
+
+.campaign__right {
+  display: flex;
+  flex-direction: column;
 }
 
 .campaign__dice {
-  overflow-y: auto;
+  flex: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.campaign__log {
+  flex: 1;
+  min-height: 0;
+}
+
+/* On desktop the log sits right under the tray, so the "last roll" echo is redundant. */
+.campaign__right .campaign__last {
+  display: none;
 }
 
 .tabbar {
@@ -1286,9 +1303,9 @@ label {
 }
 
 /* ---------- responsive ---------- */
-@media (max-width: 1180px) {
+@media (max-width: 1280px) {
   .campaign__grid {
-    grid-template-columns: 240px minmax(0, 1fr) 360px;
+    grid-template-columns: 240px minmax(0, 1fr) 340px;
   }
 }
 
@@ -1300,20 +1317,33 @@ label {
     padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
   }
 
-  .campaign__grid > [data-tab] {
+  .campaign__right {
+    display: contents;
+  }
+
+  .campaign__grid [data-tab] {
     display: none;
     height: 100%;
   }
 
-  .campaign[data-active-tab='dice'] .campaign__grid > [data-tab='dice'],
-  .campaign[data-active-tab='log'] .campaign__grid > [data-tab='log'],
-  .campaign[data-active-tab='party'] .campaign__grid > [data-tab='party'] {
+  .campaign[data-active-tab='map'] .campaign__grid [data-tab='map'],
+  .campaign[data-active-tab='dice'] .campaign__grid [data-tab='dice'],
+  .campaign[data-active-tab='log'] .campaign__grid [data-tab='log'],
+  .campaign[data-active-tab='party'] .campaign__grid [data-tab='party'] {
     display: flex;
     flex-direction: column;
   }
 
-  .campaign__grid > [data-tab='party'] .panel {
+  .campaign__grid [data-tab='party'] .panel {
     flex: none;
+  }
+
+  .campaign__dice {
+    border-bottom: 0;
+  }
+
+  .campaign__right .campaign__last {
+    display: block;
   }
 
   .tabbar {
@@ -1394,4 +1424,141 @@ label {
   .spotlight {
     padding: 24px 20px;
   }
+}
+
+/* ---------- battle map ---------- */
+.map {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 50%, rgb(255 255 255 / 0.03), transparent 70%),
+    #0e0c0a;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.map__svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+
+.map__svg:active {
+  cursor: grabbing;
+}
+
+.map--display .map__svg {
+  cursor: none;
+}
+
+.map--display .map__world {
+  transition: transform 0.6s cubic-bezier(0.3, 0.8, 0.3, 1);
+}
+
+.map__blank {
+  fill: #2a241e;
+}
+
+.map__frame {
+  fill: none;
+  stroke: rgb(0 0 0 / 0.6);
+}
+
+.map__grid-line {
+  fill: none;
+  stroke: rgb(0 0 0 / 0.35);
+}
+
+.map--blank .map__grid-line {
+  stroke: rgb(255 255 255 / 0.12);
+}
+
+.map__fog {
+  fill: #0b0908;
+}
+
+.map__fog--gm {
+  fill: rgb(20 14 30 / 0.55);
+}
+
+.token__disc {
+  stroke: rgb(255 255 255 / 0.85);
+  stroke-width: 2;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.5));
+}
+
+.token__initials {
+  fill: #fff;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: rgb(0 0 0 / 0.35);
+  stroke-width: 2px;
+}
+
+.token__name {
+  fill: #fff;
+  font-weight: 600;
+  text-anchor: middle;
+  dominant-baseline: hanging;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: rgb(0 0 0 / 0.75);
+  stroke-width: 3px;
+}
+
+.token--hidden {
+  opacity: 0.5;
+}
+
+.token--hidden .token__disc {
+  stroke-dasharray: 4 3;
+}
+
+.map__zoom {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: grid;
+  gap: 4px;
+}
+
+.map__zoom button {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  color: var(--text);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.map__zoom button:hover {
+  background: var(--surface-3);
+}
+
+.map-empty {
+  height: 100%;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.map-empty svg {
+  width: 72px;
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 1.5;
 }
