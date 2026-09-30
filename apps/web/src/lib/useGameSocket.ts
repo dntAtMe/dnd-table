@@ -1,6 +1,7 @@
 import {
   CloseCode,
   type CameraRect,
+  type CharacterRecord,
   type ClientMessage,
   type ClientRole,
   type DisplayInfo,
@@ -39,6 +40,7 @@ export interface GameState {
   /** GM only: every scene in the campaign. */
   scenes: SceneSummary[];
   pings: Ping[];
+  characters: CharacterRecord[];
   /** Latest GM framing (table displays only). */
   camera?: { sceneId: string; rect: CameraRect };
   /** Set for table displays that still need pairing. */
@@ -66,6 +68,7 @@ const initial: GameState = {
   scene: null,
   scenes: [],
   pings: [],
+  characters: [],
 };
 
 let pingSeq = 0;
@@ -97,6 +100,7 @@ function reducer(state: GameState, action: Action): GameState {
             scene: msg.scene,
             scenes: msg.scenes ?? [],
             pings: [],
+            characters: msg.characters,
             camera: undefined,
             unpairedCode: undefined,
           };
@@ -121,6 +125,8 @@ function reducer(state: GameState, action: Action): GameState {
           return state; // handled as 'ping:add' so ids are assigned outside the reducer
         case 'camera':
           return { ...state, camera: { sceneId: msg.sceneId, rect: msg.rect } };
+        case 'characters':
+          return { ...state, characters: msg.characters };
         case 'display:unpaired':
           return { ...initial, status: 'open', unpairedCode: msg.code };
       }
