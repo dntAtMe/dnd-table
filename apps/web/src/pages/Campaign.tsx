@@ -10,6 +10,7 @@ import { MapToolbar, type ToolOption } from '../components/map/MapToolbar';
 import { MapView, type MapTool } from '../components/map/MapView';
 import { SceneSettings, ScenesPanel } from '../components/ScenePanels';
 import { AddTokenMenu, TokenInspector } from '../components/TokenPanels';
+import { CharacterCreator } from '../components/character/CharacterCreator';
 import { CharacterPanel } from '../components/character/CharacterSheet';
 import { useGameSocket, type SocketStatus } from '../lib/useGameSocket';
 
@@ -68,6 +69,7 @@ export function Campaign({ user }: { user: User }) {
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
   const [tool, setTool] = useState<MapTool>('move');
   const [brush, setBrush] = useState(3);
+  const [creating, setCreating] = useState(false);
   const viewRect = useRef<CameraRect | null>(null);
   const [followTable, setFollowTable] = useState(false);
   const { hello, scene } = state;
@@ -280,7 +282,18 @@ export function Campaign({ user }: { user: User }) {
           )}
         </main>
         <section className="campaign__sheet" data-tab="sheet">
-          <CharacterPanel characters={state.characters} members={state.members} userId={hello.you.userId} isGm={isGm} send={send} />
+          {creating ? (
+            <CharacterCreator send={send} onDone={() => setCreating(false)} />
+          ) : (
+            <CharacterPanel
+              characters={state.characters}
+              members={state.members}
+              userId={hello.you.userId}
+              isGm={isGm}
+              send={send}
+              onCreate={() => setCreating(true)}
+            />
+          )}
         </section>
         </div>
 
