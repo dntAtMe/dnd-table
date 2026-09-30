@@ -6,6 +6,7 @@ import { LogFeed } from '../components/LogFeed';
 import { DisplaysPanel, InviteCode, PartyList } from '../components/Panels';
 import { RollView } from '../components/RollView';
 import { MapView } from '../components/map/MapView';
+import { SceneSettings, ScenesPanel } from '../components/ScenePanels';
 import { useGameSocket, type SocketStatus } from '../lib/useGameSocket';
 
 const STATUS_TEXT: Record<SocketStatus, string> = {
@@ -104,6 +105,22 @@ export function Campaign({ user }: { user: User }) {
           <Section title={`Party · ${online} online`}>
             <PartyList members={state.members} />
           </Section>
+          {isGm && (
+            <Section title="Scenes">
+              <ScenesPanel
+                campaignId={hello.campaign.id}
+                scenes={state.scenes}
+                activeSceneId={state.activeSceneId}
+                openSceneId={state.scene?.id ?? null}
+                send={send}
+              />
+            </Section>
+          )}
+          {isGm && state.scene && (
+            <Section title="Scene settings">
+              <SceneSettings key={state.scene.id} scene={state.scene} isLive={state.scene.id === state.activeSceneId} send={send} />
+            </Section>
+          )}
           {isGm && hello.campaign.inviteCode && (
             <Section title="Invite players">
               <InviteCode code={hello.campaign.inviteCode} />
@@ -119,6 +136,14 @@ export function Campaign({ user }: { user: User }) {
 
         <main className="campaign__map" data-tab="map">
           {state.scene ? <MapView scene={state.scene} isGm={isGm} /> : <MapEmpty isGm={isGm} />}
+          {isGm && state.scene && state.scene.id !== state.activeSceneId && (
+            <div className="map-banner">
+              <span>Preparing: players can't see this scene</span>
+              <button type="button" className="btn btn--sm btn--primary" onClick={() => send({ type: 'scene:activate', sceneId: state.scene!.id })}>
+                Show to players
+              </button>
+            </div>
+          )}
         </main>
 
         <div className="campaign__right">
