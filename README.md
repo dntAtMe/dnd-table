@@ -4,21 +4,26 @@ A shared virtual table for playing D&D 5e (2024 rules) with your group, in perso
 Every screen joins the same live session in its own role:
 
 - **GM** (laptop/tablet): runs the game, sees hidden rolls and whispers, connects table screens.
-- **Players** (phones/tablets): roll dice and chat. Character sheets are coming next.
+- **Players** (phones/tablets): see the map, move their own tokens, measure, ping, roll dice and chat.
+  Character sheets are coming next.
 - **Table display** (TV, projector, spare laptop): a shared view that needs no account. It pairs
-  with a campaign using a code and shows public rolls big enough to read across the room.
-  The battle map will live here too.
+  with a campaign using a code and shows the battle map plus public rolls big enough to read
+  across the room. It can follow the GM's camera.
 
 ## Status
 
-Phase 1 of the plan is done:
+Phases 1 and 2 are done:
 
 - [x] Accounts (username + password), campaigns, invite codes
 - [x] Live sync over WebSockets, with presence (who's online)
 - [x] Server-side dice: `1d20+5`, `2d20kh1` (advantage), `4d6dl1`, `d%`, with natural 20/1 detection
 - [x] Public rolls, secret rolls (to the GM only), chat and whispers
 - [x] Table display pairing with a spotlight for new rolls
-- [ ] Phase 2: battle map (grid, tokens, fog of war, GM camera)
+- [x] Battle map: upload a map image or use a blank grid; the GM prepares scenes and shows one to players
+- [x] Grid calibration (cells across, cell size, X/Y shift), 5e 2024 distances (every square is 5 ft)
+- [x] Tokens: drag to move (players move their own), sizes Medium–Gargantuan, hidden tokens
+- [x] Fog of war painted with a brush; hidden or fogged tokens never reach player devices
+- [x] Measuring tool, pings, and table screens that follow the GM's camera
 - [ ] Phase 3: character sheets (2024 rules) with tap-to-roll, a character creator and level-up
 - [ ] Phase 4: combat (initiative, HP and conditions, monsters, encounter builder)
 - [ ] Phase 5: handouts, scenes, AoE templates, lighting, audio
@@ -37,7 +42,20 @@ pnpm dev
   create their own accounts, and join with the campaign's invite code.
 - On the TV or shared screen, open `/table` and enter the code it shows under **Table displays** on the GM's screen.
 
-In dev, Vite (port 5173) serves the client and proxies `/api` and `/ws` to the API server (port 3000).
+In dev, Vite (port 5173) serves the client and proxies `/api`, `/ws` and `/files` to the API server (port 3000).
+
+### Running a map
+
+1. As GM, create a scene in the sidebar: upload a map image, or leave it empty for a blank grid.
+2. Line the grid up under **Scene settings**: set *Cells across* to the number of squares printed
+   across the map, then nudge *Shift X/Y* until the lines match.
+3. Add tokens with **+ Token** (creatures, hidden creatures, or one per player). Select a token to
+   rename it, resize it, hide it or give a player control of it.
+4. Turn on fog of war and paint with **Reveal**/**Hide** (right-drag or two fingers still pan).
+5. Press **Show** to put the scene in front of players and table screens. **Table follows me** makes
+   the TV show what you're looking at.
+
+Map controls: drag to pan, scroll or pinch to zoom, double-click to ping.
 
 ### Single-port production mode
 
@@ -55,14 +73,15 @@ pnpm start          # serves the client and API on http://0.0.0.0:3000
 | `COOKIE_SECURE` | `false` | Set `true` when served over HTTPS                                 |
 | `LOG_REQUESTS`  | `false` | Log every HTTP request                                            |
 
-All state is in one SQLite file (`data/dnd-table.db`). Back it up by copying that file.
+All state is in `data/`: one SQLite file (`dnd-table.db`) plus uploaded images in `uploads/`.
+Back it up by copying that folder.
 
 ## Layout
 
 ```
 apps/server       Fastify + WebSockets, SQLite (node:sqlite), authoritative game state
 apps/web          React + Vite client: GM, player and table views
-packages/rules    5e rules engine shared by client and server (dice so far)
+packages/rules    5e rules engine shared by client and server (dice, grid geometry, fog mask)
 packages/protocol REST and WebSocket message types
 ```
 
