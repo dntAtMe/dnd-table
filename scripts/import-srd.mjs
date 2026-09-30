@@ -113,6 +113,26 @@ const camel = (s) => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 const skillId = (profIndex) => camel(profIndex.replace(/^skill-/, ''));
 const compact = (obj) => Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined && v !== null));
 
+/** Structured starting-equipment choice: options A/B/C, each a list of items plus coins (in GP). */
+function equipmentChoice(choice) {
+  const toGp = { cp: 0.01, sp: 0.1, ep: 0.5, gp: 1, pp: 10 };
+  const options = (choice.from?.options ?? []).map((o, i) => {
+    const parts = o.option_type === 'multiple' ? o.items : [o];
+    const items = [];
+    let gold = 0;
+    for (const part of parts) {
+      if (part.option_type === 'money') gold += part.count * (toGp[part.unit] ?? 1);
+      else if (part.option_type === 'counted_reference' || part.option_type === 'reference') {
+        const ref = part.of ?? part.item;
+        assert(equipmentByIndex[ref.index] || ref.index === 'holy-symbols', `unknown starting item ${ref.index}`);
+        items.push(compact({ id: ref.index, name: ref.name + (ref.note ? ` (${ref.note})` : ''), count: part.count ?? 1 }));
+      }
+    }
+    return { label: String.fromCharCode(65 + i), items, gold };
+  });
+  return { desc: clean(choice.desc), options };
+}
+
 function refs(options) {
   return (options?.from?.options ?? []).flatMap((o) => (o.item ? [o.item.index] : o.of ? [o.of.index] : []));
 }
@@ -276,7 +296,7 @@ const classes = raw.Classes.map((c) => {
     spellcasting: c.spellcasting
       ? { ability: c.spellcasting.spellcasting_ability.index, pact: c.index === 'warlock' }
       : undefined,
-    startingEquipment: (c.starting_equipment_options ?? []).map((o) => clean(o.desc)),
+    startingEquipment: (c.starting_equipment_options ?? []).map(equipmentChoice),
     subclasses: c.subclasses.map((s) => s.index),
     multiclassPrerequisites: c.multi_classing?.prerequisites?.map((p) => ({ ability: p.ability_score.index, minimum: p.minimum_score })),
     levels,
@@ -349,7 +369,7 @@ const backgrounds = raw.Backgrounds.map((b) => {
     skills,
     tools: tools.length ? tools : undefined,
     toolChoice: b.proficiency_choices?.map((pc) => clean(pc.desc)).join('; '),
-    equipment: (b.equipment_options ?? []).map((o) => clean(o.desc)),
+    equipment: (b.equipment_options ?? []).map(equipmentChoice),
   });
 });
 

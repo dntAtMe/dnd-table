@@ -3,6 +3,12 @@ import type { Ability, DamageType, Skill } from './core';
 
 export type ArmorTraining = 'light' | 'medium' | 'heavy' | 'shield';
 
+/** "Choose A or B" starting equipment; item ids refer to weapons, armor or gear. */
+export interface EquipmentChoice {
+  desc: string;
+  options: { label: string; items: { id: string; name: string; count: number }[]; gold: number }[];
+}
+
 export interface ClassLevel {
   level: number;
   profBonus: number;
@@ -26,7 +32,7 @@ export interface ClassDef {
   weaponTraining: { categories: WeaponCategory[]; weapons: string[] };
   tools?: string[];
   spellcasting?: { ability: Ability; pact: boolean };
-  startingEquipment: string[];
+  startingEquipment: EquipmentChoice[];
   subclasses: string[];
   multiclassPrerequisites?: { ability: Ability; minimum: number }[];
   levels: ClassLevel[];
@@ -83,7 +89,7 @@ export interface BackgroundDef {
   skills: Skill[];
   tools?: string[];
   toolChoice?: string;
-  equipment: string[];
+  equipment: EquipmentChoice[];
 }
 
 export type FeatType = 'origin' | 'general' | 'fighting-style' | 'epic-boon';
