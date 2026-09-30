@@ -176,7 +176,7 @@ export function MapView({
   useEffect(() => {
     if (!size) return;
     if (!interactive) {
-      setCam(fitRect(camera ?? fullMap, size.width, size.height, camera ? 0 : 24));
+      setCam(camera ? fitRect(camera, size.width, size.height, 0, 'area') : fitRect(fullMap, size.width, size.height, 24));
     } else if (fittedScene.current !== scene.id || !camRef.current) {
       fittedScene.current = scene.id;
       setCam(fitRect(fullMap, size.width, size.height, 24));

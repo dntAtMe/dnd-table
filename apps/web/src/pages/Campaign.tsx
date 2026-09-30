@@ -68,10 +68,34 @@ export function Campaign({ user }: { user: User }) {
   const [tool, setTool] = useState<MapTool>('move');
   const [brush, setBrush] = useState(3);
   const viewRect = useRef<CameraRect | null>(null);
-  const onViewChange = useCallback((rect: CameraRect) => {
-    viewRect.current = rect;
-  }, []);
+  const [followTable, setFollowTable] = useState(false);
   const { hello, scene } = state;
+  const isLive = Boolean(scene && scene.id === state.activeSceneId);
+  const tableFollows = followTable && isLive;
+
+  // While "table follows me" is on, stream the GM's view to table screens (throttled).
+  const cameraTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const lastCameraSent = useRef(0);
+  const sendCamera = useCallback(() => {
+    const rect = viewRect.current;
+    if (!rect || !scene) return;
+    lastCameraSent.current = Date.now();
+    send({ type: 'camera', sceneId: scene.id, rect });
+  }, [scene, send]);
+  const onViewChange = useCallback(
+    (rect: CameraRect) => {
+      viewRect.current = rect;
+      if (!tableFollows) return;
+      clearTimeout(cameraTimer.current);
+      const wait = 150 - (Date.now() - lastCameraSent.current);
+      if (wait <= 0) sendCamera();
+      else cameraTimer.current = setTimeout(sendCamera, wait);
+    },
+    [tableFollows, sendCamera],
+  );
+  useEffect(() => {
+    if (tableFollows) sendCamera();
+  }, [tableFollows, sendCamera]);
   const isGm = hello?.you.role === 'gm';
   const selectedToken = scene?.tokens.find((t) => t.id === selectedTokenId) ?? null;
 
@@ -220,6 +244,17 @@ export function Campaign({ user }: { user: User }) {
                 onBrush={setBrush}
               >
                 {isGm && <AddTokenMenu scene={scene} members={state.members} at={viewCentreCell} send={send} />}
+                {isGm && isLive && state.displays.length > 0 && (
+                  <button
+                    type="button"
+                    className={`toggle toggle--sm${followTable ? ' toggle--on' : ''}`}
+                    onClick={() => setFollowTable((f) => !f)}
+                    aria-pressed={followTable}
+                    title="Table screens show what you're looking at"
+                  >
+                    Table follows me
+                  </button>
+                )}
               </MapToolbar>
             </MapView>
           ) : (

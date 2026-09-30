@@ -986,7 +986,7 @@ label {
 .table {
   height: 100dvh;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(0, 1fr) 300px;
   grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas:
     'header header'
@@ -1050,10 +1050,38 @@ label {
 
 .table__stage {
   grid-area: stage;
+  position: relative;
   display: grid;
   place-items: center;
-  padding: 32px;
+  min-height: 0;
   overflow: hidden;
+}
+
+.table__stage > .map {
+  position: absolute;
+  inset: 0;
+}
+
+.table__spotlight {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  max-height: 100%;
+  padding: 24px;
+}
+
+.table__spotlight--over-map {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, rgb(0 0 0 / 0.55), rgb(0 0 0 / 0.25) 70%);
+  animation: fade-in 0.3s ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
 }
 
 .table__idle {
@@ -1383,6 +1411,8 @@ label {
   }
 
   .table__log {
+    max-height: 24vh;
+    padding: 12px 20px;
     border-left: 0;
     border-top: 1px solid var(--border);
   }
@@ -1983,4 +2013,10 @@ select {
     transform: scale(5);
     opacity: 0;
   }
+}
+
+.toggle--sm {
+  min-height: 32px;
+  padding: 4px 10px;
+  font-size: 13px;
 }

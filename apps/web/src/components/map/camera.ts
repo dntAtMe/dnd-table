@@ -9,9 +9,15 @@ export interface Camera {
 
 export const MAX_ZOOM = 8;
 
-/** Camera that fits a map rectangle inside a viewport of w×h pixels, centred. */
-export function fitRect(rect: CameraRect, w: number, h: number, padding = 0): Camera {
-  const k = Math.min((w - padding * 2) / rect.w, (h - padding * 2) / rect.h);
+/**
+ * Camera centred on a map rectangle in a w×h viewport. 'contain' shows all of it; 'area'
+ * shows the same amount of map reshaped to the viewport, which is how a wide TV follows a GM
+ * whose map pane has a different shape.
+ */
+export function fitRect(rect: CameraRect, w: number, h: number, padding = 0, mode: 'contain' | 'area' = 'contain'): Camera {
+  const sx = (w - padding * 2) / rect.w;
+  const sy = (h - padding * 2) / rect.h;
+  const k = mode === 'area' ? Math.sqrt(sx * sy) : Math.min(sx, sy);
   return { k, x: w / 2 - (rect.x + rect.w / 2) * k, y: h / 2 - (rect.y + rect.h / 2) * k };
 }
 

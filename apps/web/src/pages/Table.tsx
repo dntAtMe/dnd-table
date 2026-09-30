@@ -1,6 +1,7 @@
 import type { LogEntry, NewDisplay } from '@dnd/protocol';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { RollView } from '../components/RollView';
+import { MapView } from '../components/map/MapView';
 import { api, errorMessage } from '../lib/api';
 import { useGameSocket } from '../lib/useGameSocket';
 
@@ -163,15 +164,22 @@ export function Table() {
       </header>
 
       <main className="table__stage">
-        {spotlight ? (
-          <Spotlight entry={spotlight} />
+        {state.scene ? (
+          <MapView scene={state.scene} isGm={false} interactive={false} camera={state.camera?.rect} pings={state.pings} />
         ) : (
-          <div className="table__idle">
-            <svg viewBox="0 0 64 64" className="table__idle-mark" aria-hidden="true">
-              <path d="M32 3 57 17.5v29L32 61 7 46.5v-29z" />
-              <path d="m32 14 15 26H17z" />
-            </svg>
-            <p>The map will appear here.</p>
+          !spotlight && (
+            <div className="table__idle">
+              <svg viewBox="0 0 64 64" className="table__idle-mark" aria-hidden="true">
+                <path d="M32 3 57 17.5v29L32 61 7 46.5v-29z" />
+                <path d="m32 14 15 26H17z" />
+              </svg>
+              <p>Waiting for the GM to show a map.</p>
+            </div>
+          )
+        )}
+        {spotlight && (
+          <div className={`table__spotlight${state.scene ? ' table__spotlight--over-map' : ''}`}>
+            <Spotlight entry={spotlight} />
           </div>
         )}
       </main>
