@@ -10,6 +10,7 @@ import { MapToolbar, type ToolOption } from '../components/map/MapToolbar';
 import { MapView, type MapTool } from '../components/map/MapView';
 import { SceneSettings, ScenesPanel } from '../components/ScenePanels';
 import { AddTokenMenu, TokenInspector } from '../components/TokenPanels';
+import { CharacterPanel } from '../components/character/CharacterSheet';
 import { useGameSocket, type SocketStatus } from '../lib/useGameSocket';
 
 const STATUS_TEXT: Record<SocketStatus, string> = {
@@ -36,7 +37,7 @@ function Section({ title, children, className = '', tab }: SectionProps) {
   );
 }
 
-type Tab = 'map' | 'dice' | 'log' | 'party';
+type Tab = 'map' | 'sheet' | 'dice' | 'log' | 'party';
 
 const PLAYER_TOOLS: ToolOption[] = [
   { tool: 'move', label: 'Move' },
@@ -45,7 +46,7 @@ const PLAYER_TOOLS: ToolOption[] = [
 ];
 const GM_TOOLS: ToolOption[] = [...PLAYER_TOOLS, { tool: 'reveal', label: 'Reveal' }, { tool: 'hide', label: 'Hide' }];
 
-const TAB_LABELS: Record<Tab, string> = { map: 'Map', dice: 'Dice', log: 'Log', party: 'Party' };
+const TAB_LABELS: Record<Tab, string> = { map: 'Map', sheet: 'Sheet', dice: 'Dice', log: 'Log', party: 'Party' };
 
 function MapEmpty({ isGm }: { isGm: boolean }) {
   return (
@@ -220,6 +221,15 @@ export function Campaign({ user }: { user: User }) {
           )}
         </aside>
 
+        <div className="campaign__center">
+        <div className="center-switch" role="tablist" aria-label="Main view">
+          <button type="button" role="tab" aria-selected={tab !== 'sheet'} className={tab !== 'sheet' ? 'is-active' : ''} onClick={() => setTab('map')}>
+            Map
+          </button>
+          <button type="button" role="tab" aria-selected={tab === 'sheet'} className={tab === 'sheet' ? 'is-active' : ''} onClick={() => setTab('sheet')}>
+            {isGm ? 'Characters' : 'Character'}
+          </button>
+        </div>
         <main className="campaign__map" data-tab="map">
           {scene ? (
             <MapView
@@ -269,6 +279,10 @@ export function Campaign({ user }: { user: User }) {
             </div>
           )}
         </main>
+        <section className="campaign__sheet" data-tab="sheet">
+          <CharacterPanel characters={state.characters} members={state.members} userId={hello.you.userId} isGm={isGm} send={send} />
+        </section>
+        </div>
 
         <div className="campaign__right">
           <Section title="Dice" className="campaign__dice" tab="dice">
@@ -285,7 +299,7 @@ export function Campaign({ user }: { user: User }) {
       </div>
 
       <nav className="tabbar" aria-label="Sections">
-        {(['map', 'dice', 'log', 'party'] as const).map((t) => (
+        {(['map', 'sheet', 'dice', 'log', 'party'] as const).map((t) => (
           <button key={t} type="button" className={tab === t ? 'is-active' : ''} onClick={() => setTab(t)}>
             {t === 'party' && isGm ? 'Manage' : TAB_LABELS[t]}
           </button>
