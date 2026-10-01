@@ -1,4 +1,4 @@
-import type { ClientRole, GridPatch, SceneSummary, SceneView, Token } from '@dnd/protocol';
+import type { ClientRole, GridPatch, MapTemplate, SceneSummary, SceneView, Token } from '@dnd/protocol';
 import { DEFAULT_GRID, DEFAULT_SCENE_VISION, FogMask, GRID_LIMITS, MapData, gridGeometry, type Grid, type SceneVision, type Sight } from '@dnd/rules';
 import type { z } from 'zod';
 import type { SceneRecord } from './store';
@@ -40,11 +40,19 @@ export function tokenVisible(token: Token, viewer: Viewer, scene: SceneRecord, f
 /**
  * The scene as one viewer may see it. `sight` (vision on, players and table screens only) is what
  * their tokens see: it limits the tokens sent, and counts as explored on top of the fog, so map
- * data there is sent too.
+ * data there is sent too. Templates follow the tokens the viewer can see.
  */
-export function sceneView(scene: SceneRecord, tokens: Token[], viewer: Viewer, vision: SceneVision = DEFAULT_SCENE_VISION, sight?: Sight): SceneView {
-  let fog = scene.fogEnabled ? fogMask(scene) : undefined;
+export function sceneView(
+  scene: SceneRecord,
+  tokens: Token[],
+  viewer: Viewer,
+  vision: SceneVision = DEFAULT_SCENE_VISION,
+  sight?: Sight,
+  templates: MapTemplate[] = [],
+): SceneView {
+  const fog = scene.fogEnabled ? fogMask(scene) : undefined;
   if (fog && sight) for (let i = 0; i < fog.bits.length; i++) fog.bits[i]! |= sight.visible.bits[i] ?? 0;
+  const visible = tokens.filter((t) => tokenVisible(t, viewer, scene, fog, sight?.visible));
   return {
     ...summary(scene),
     width: scene.width,
@@ -53,10 +61,29 @@ export function sceneView(scene: SceneRecord, tokens: Token[], viewer: Viewer, v
     fogEnabled: scene.fogEnabled,
     fog: fog ? fog.encode() : '',
     map: viewer.role === 'gm' || !scene.map ? scene.map : mapData(scene).forPlayers(fog).encode(),
-    tokens: tokens.filter((t) => tokenVisible(t, viewer, scene, fog, sight?.visible)),
+    tokens: visible,
+    templates: templateViews(templates, visible, viewer),
     vision,
     ...(sight && { visible: sight.visible.encode(), dim: sight.dim.encode() }),
   };
+}
+
+/**
+ * Templates this viewer may see: hidden ones are GM-only, and one following a token is only shown
+ * when the token is, at the token's current space (so an Emanation moves with its creature).
+ */
+export function templateViews(templates: MapTemplate[], visibleTokens: Token[], viewer: Viewer): MapTemplate[] {
+  const out: MapTemplate[] = [];
+  for (const t of templates) {
+    if (t.hidden && viewer.role !== 'gm') continue;
+    if (!t.tokenId) {
+      out.push(t);
+      continue;
+    }
+    const token = visibleTokens.find((k) => k.id === t.tokenId);
+    if (token) out.push({ ...t, x: token.col, y: token.row, span: token.size });
+  }
+  return out;
 }
 
 export function applyGridPatch(base: Grid, patch: z.infer<typeof GridPatch> | undefined, width: number, height: number): Grid {

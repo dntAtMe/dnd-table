@@ -31,6 +31,13 @@ const ICONS: Record<string, ReactNode> = {
   ),
   terrain: <path d="m3 19 6-10 4 6 3-4 5 8zM14 6.5a1.5 1.5 0 1 0 0-.01" />,
   erase: <path d="m8 20-5-5L14 4l7 7-7 7M20 20H8M9 9l7 7" />,
+  template: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 12l6.4-6.4" />
+      <circle cx="12" cy="12" r="1.2" />
+    </>
+  ),
 };
 
 export interface ToolOption {

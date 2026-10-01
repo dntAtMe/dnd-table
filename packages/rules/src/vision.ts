@@ -19,6 +19,7 @@
 
 import { FogMask } from './grid';
 import { edgeBlocks, terrainInfo, type MapData } from './mapdata';
+import type { Footprint } from './areas';
 
 export const LIGHTING_LEVELS = ['bright', 'dim', 'dark'] as const;
 /** Ambient light over a whole scene: daylight, twilight or moonlight, darkness (night, dungeons). */
@@ -78,12 +79,6 @@ export function lightPreset(id: LightPresetId): LightSource | null {
   return p ? { preset: p.id, bright: p.bright, dim: p.dim } : null;
 }
 
-/** Something on the grid with a square footprint: `size` × `size` cells from (col, row). */
-export interface Footprint {
-  col: number;
-  row: number;
-  size: number;
-}
 
 export interface Emitter extends Footprint {
   bright: number;

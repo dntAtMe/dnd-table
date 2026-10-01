@@ -2,7 +2,7 @@
 // tokens can see, and dynamic fog. The maths is in @dnd/rules (vision.ts); this module stores the
 // settings, works out who looks through which tokens, and caches the expensive steps per scene so
 // re-sending views after every move stays cheap.
-import type { ClientMessage, ClientRole, SceneView, Token, User, VisionMessage } from '@dnd/protocol';
+import type { ClientMessage, ClientRole, MapTemplate, SceneView, Token, User, VisionMessage } from '@dnd/protocol';
 import {
   MapData,
   SightMap,
@@ -70,11 +70,11 @@ export class VisionTracker<C extends VisionConn> {
    * and a table screen through every player's tokens (it is the party's shared screen); the GM
    * always sees everything.
    */
-  view(scene: SceneRecord, tokens: Token[], viewer: Viewer): SceneView {
+  view(scene: SceneRecord, tokens: Token[], viewer: Viewer, templates: MapTemplate[] = []): SceneView {
     const settings = this.store.sceneVision(scene.id);
-    if (!settings.enabled || viewer.role === 'gm') return sceneView(scene, tokens, viewer, settings);
+    if (!settings.enabled || viewer.role === 'gm') return sceneView(scene, tokens, viewer, settings, undefined, templates);
     const eyes = viewer.role === 'display' ? this.partyTokens(scene, tokens) : tokens.filter((t) => viewer.userId && t.ownerUserId === viewer.userId);
-    return sceneView(scene, tokens, viewer, settings, this.sight(scene, settings, tokens, eyes));
+    return sceneView(scene, tokens, viewer, settings, this.sight(scene, settings, tokens, eyes), templates);
   }
 
   /**

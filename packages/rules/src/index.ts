@@ -1,3 +1,4 @@
+export * from './areas';
 export * from './builder';
 export * from './character';
 export * from './combat';

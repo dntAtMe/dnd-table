@@ -32,6 +32,7 @@ import { CombatTracker, isCombatMessage } from './combat';
 import { applyMapEdit, checkPlayerMove, remapForGrid } from './mapEditor';
 import { GameError, applyGridPatch, clampToGrid, fogMask, summary } from './scenes';
 import type { Display, SceneRecord, Store } from './store';
+import { applyTemplateMessage, isTemplateMessage } from './templates';
 import { VisionTracker, isVisionMessage } from './vision';
 
 const LOG_HISTORY = 100;
@@ -303,7 +304,8 @@ export class Hub {
   private viewFor(conn: Conn): SceneView | null {
     const id = this.sceneIdFor(conn);
     const scene = id ? this.store.getScene(id) : undefined;
-    return scene ? this.vision.view(scene, this.vision.tokens(scene.id), { role: conn.role, userId: conn.user?.id }) : null;
+    if (!scene) return null;
+    return this.vision.view(scene, this.vision.tokens(scene.id), { role: conn.role, userId: conn.user?.id }, this.store.templates(scene.id));
   }
 
   /** Re-sends a scene to everyone looking at it, each filtered for their role. */
@@ -312,12 +314,13 @@ export class Hub {
     if (!stored) return;
     const tokens = this.vision.tokens(sceneId);
     const scene = this.vision.explore(stored, tokens);
+    const templates = this.store.templates(sceneId);
     const views = new Map<string, SceneView>();
     for (const conn of this.rooms.get(campaignId) ?? []) {
       if (this.sceneIdFor(conn) !== sceneId) continue;
       const key = conn.role === 'player' ? `player:${conn.user?.id}` : conn.role;
       let view = views.get(key);
-      if (!view) views.set(key, (view = this.vision.view(scene, tokens, { role: conn.role, userId: conn.user?.id })));
+      if (!view) views.set(key, (view = this.vision.view(scene, tokens, { role: conn.role, userId: conn.user?.id }, templates)));
       send(conn.socket, { type: 'scene', scene: view });
     }
   }
@@ -542,8 +545,18 @@ export class Hub {
   }
 
   private dispatch(conn: Conn & { user: User }, msg: ClientMessage): void {
-    if (isCombatMessage(msg)) return this.combat.handle(conn, msg);
+    if (isCombatMessage(msg)) {
+      this.combat.handle(conn, msg);
+      // One-shot areas (a Fireball) have gone off once the turn passes.
+      if (msg.type === 'combat:turn') for (const id of this.store.deleteOneShotTemplates(conn.campaignId)) this.sceneChanged(conn.campaignId, id);
+      return;
+    }
     if (isVisionMessage(msg)) return this.vision.handle(conn, msg);
+    if (isTemplateMessage(msg)) {
+      const activeSceneId = this.store.activeSceneId(conn.campaignId);
+      const actor = { role: conn.role, userId: conn.user.id, campaignId: conn.campaignId, activeSceneId };
+      return this.sceneChanged(conn.campaignId, applyTemplateMessage(this.store, msg, actor));
+    }
     switch (msg.type) {
       case 'roll': {
         const roll = rollDice(msg.expr);

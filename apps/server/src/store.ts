@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { CampaignSummary, CharacterRecord, LogEntry, Role, SceneSummary, Token, User, Visibility } from '@dnd/protocol';
+import type { CampaignSummary, CharacterRecord, LogEntry, MapTemplate, Role, SceneSummary, Token, User, Visibility } from '@dnd/protocol';
 import { DEFAULT_SCENE_VISION, type Character, type Grid, type SceneVision } from '@dnd/rules';
 import type { Encounter } from './combat';
 import type { DB } from './db';
@@ -454,6 +454,70 @@ export class Store {
       .run(tokenId, JSON.stringify(vision));
   }
 
+  // ---------- area templates ----------
+
+  private static toTemplate(row: Row): MapTemplate {
+    return {
+      ...(JSON.parse(row.data as string) as Omit<MapTemplate, 'id' | 'sceneId' | 'tokenId' | 'ownerUserId'>),
+      id: row.id as string,
+      sceneId: row.scene_id as string,
+      tokenId: (row.token_id as string | null) ?? null,
+      ownerUserId: (row.owner_user_id as string | null) ?? null,
+    };
+  }
+
+  private static templateData({ id: _, sceneId: __, tokenId: ___, ownerUserId: ____, span: _____, ...data }: MapTemplate): string {
+    return JSON.stringify(data);
+  }
+
+  templates(sceneId: string): MapTemplate[] {
+    const rows = this.db.prepare(`${TEMPLATE_SELECT} WHERE scene_id = ? ORDER BY rowid`).all(sceneId) as Row[];
+    return rows.map(Store.toTemplate);
+  }
+
+  getTemplate(id: string): MapTemplate | undefined {
+    const row = this.db.prepare(`${TEMPLATE_SELECT} WHERE id = ?`).get(id) as Row | undefined;
+    return row && Store.toTemplate(row);
+  }
+
+  createTemplate(template: Omit<MapTemplate, 'id'>): MapTemplate {
+    const created = { ...template, id: randomUUID() };
+    this.db
+      .prepare('INSERT INTO templates (id, scene_id, token_id, owner_user_id, data) VALUES (?, ?, ?, ?, ?)')
+      .run(created.id, created.sceneId, created.tokenId, created.ownerUserId, Store.templateData(created));
+    return created;
+  }
+
+  updateTemplate(template: MapTemplate): void {
+    this.db.prepare('UPDATE templates SET data = ? WHERE id = ?').run(Store.templateData(template), template.id);
+  }
+
+  deleteTemplate(id: string): void {
+    this.db.prepare('DELETE FROM templates WHERE id = ?').run(id);
+  }
+
+  /** Removes a scene's templates: all of them, or only one owner's one-shot ones. */
+  deleteTemplates(sceneId: string, oneShotOf?: string): number {
+    if (oneShotOf === undefined) return Number(this.db.prepare('DELETE FROM templates WHERE scene_id = ?').run(sceneId).changes);
+    return Number(
+      this.db
+        .prepare(`DELETE FROM templates WHERE scene_id = ? AND owner_user_id = ? AND json_extract(data, '$.linger') = 0`)
+        .run(sceneId, oneShotOf).changes,
+    );
+  }
+
+  /** Removes every one-shot template in a campaign; returns the scenes that had any. */
+  deleteOneShotTemplates(campaignId: string): string[] {
+    const rows = this.db
+      .prepare(
+        `DELETE FROM templates WHERE json_extract(data, '$.linger') = 0
+           AND scene_id IN (SELECT id FROM scenes WHERE campaign_id = ?)
+         RETURNING scene_id`,
+      )
+      .all(campaignId) as Row[];
+    return [...new Set(rows.map((r) => r.scene_id as string))];
+  }
+
   // ---------- characters ----------
 
   private static toCharacter(row: Row): CharacterRecord & { campaignId: string } {
@@ -557,6 +621,8 @@ const SCENE_SELECT = `
 
 const TOKEN_SELECT = `
   SELECT id, scene_id, name, color, col, row, size, hidden, owner_user_id, character_id FROM tokens`;
+
+const TEMPLATE_SELECT = `SELECT id, scene_id, token_id, owner_user_id, data FROM templates`;
 
 const LOG_SELECT = `
   SELECT l.id, l.kind, l.visibility, l.payload, l.created_at, l.user_id, u.display_name,

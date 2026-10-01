@@ -1,0 +1,156 @@
+/* ---------- area-of-effect templates on the map ---------- */
+.template {
+  pointer-events: none;
+}
+
+.template__cells {
+  fill: currentColor;
+  fill-opacity: 0.22;
+}
+
+.template__outline {
+  fill: currentColor;
+  fill-opacity: 0.08;
+  stroke: currentColor;
+  stroke-opacity: 0.95;
+  stroke-linejoin: round;
+}
+
+.template__origin {
+  fill: currentColor;
+}
+
+.template__caught {
+  fill: none;
+  stroke: currentColor;
+  stroke-opacity: 0.9;
+}
+
+.template--hidden .template__cells {
+  fill-opacity: 0.12;
+}
+
+.template--hidden .template__outline {
+  stroke-dasharray: 6 4;
+}
+
+.template--draft .template__cells {
+  fill-opacity: 0.32;
+}
+
+.template--selected .template__outline {
+  fill-opacity: 0.14;
+}
+
+.template--editable .template__cells,
+.template--editable .template__outline {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.template--selected .template__cells,
+.template--selected .template__outline {
+  cursor: move;
+}
+
+.template__label rect {
+  stroke: currentColor;
+}
+
+.template__handle {
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+}
+
+.template__handle circle {
+  fill: rgb(20 16 12 / 0.9);
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.template__handle path {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- template tool options and the selected template card ---------- */
+.template-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.template-options select {
+  max-width: 170px;
+}
+
+.template-options__size {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.template-options__size input {
+  width: 64px;
+  min-height: 32px;
+  padding: 4px 6px;
+}
+
+.template-options .swatch {
+  width: 22px;
+  height: 22px;
+}
+
+.template-card {
+  position: absolute;
+  right: 60px;
+  bottom: 12px;
+  z-index: 4;
+  width: min(300px, calc(100% - 84px));
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--surface) 95%, transparent);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--tpl, var(--accent));
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.3);
+  font-size: 14px;
+}
+
+.campaign__map:has(.map-initiative) .template-card {
+  bottom: 64px;
+}
+
+.template-card__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.template-card__title {
+  flex: 1;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-card__caught {
+  margin: 0;
+  color: var(--muted);
+}
+
+.template-card__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}

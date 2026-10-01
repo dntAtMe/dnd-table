@@ -1169,3 +1169,180 @@ describe('vision', () => {
     expect(goblin.col).toBe(6);
   });
 });
+
+describe('area templates', () => {
+  /** GM, Ana (with a token at (2, 2)) and Bram on a live blank 10×8 scene (50px cells), plus a second scene. */
+  async function templateTable() {
+    const { gm, player, campaignId } = await campaignWithPlayer();
+    const gmSock = await gm.socket(`campaign=${campaignId}`);
+    const hello = await gmSock.until('hello');
+    const other = await Client.register('bram', 'Bram');
+    await player.call('POST', '/api/campaigns/join', { inviteCode: hello.campaign.inviteCode });
+    await other.call('POST', '/api/campaigns/join', { inviteCode: hello.campaign.inviteCode });
+    const { data: me } = await player.call('GET', '/api/auth/me');
+    const playerSock = await player.socket(`campaign=${campaignId}`);
+    const otherSock = await other.socket(`campaign=${campaignId}`);
+    await playerSock.until('hello');
+    await otherSock.until('hello');
+    gmSock.send({ type: 'scene:create', name: 'Back room', fileId: null, width: 300, height: 300, grid: { size: 50 } });
+    gmSock.send({ type: 'scene:create', name: 'Hall', fileId: null, width: 500, height: 400, grid: { size: 50 } });
+    const { scenes } = await gmSock.until('scenes', (m) => m.scenes.length === 2);
+    const [backId, sceneId] = [scenes[0]!.id, scenes[1]!.id];
+    gmSock.send({ type: 'scene:activate', sceneId });
+    gmSock.send({ type: 'token:create', sceneId, name: 'Ana', color: '#3366ff', col: 2, row: 2, ownerUserId: me.user.id });
+    const { scene } = await gmSock.until('scene', (m) => m.scene?.tokens.length === 1);
+    await playerSock.until('scene', (m) => m.scene?.tokens.length === 1);
+    await otherSock.until('scene', (m) => m.scene?.tokens.length === 1);
+    return { gm, campaignId, gmSock, playerSock, otherSock, sceneId, backId, ana: scene!.tokens[0]!, playerId: me.user.id as string };
+  }
+
+  const fireball = { shape: 'sphere', size: 20, x: 5, y: 4, angle: 0, color: '#e8743b', label: 'Fireball' } as const;
+  const labels = (scene: SceneView | null) => scene?.templates.map((t) => t.label) ?? [];
+
+  it('lets players place templates on the scene in play and everyone see them', async () => {
+    const { gm, campaignId, gmSock, playerSock, otherSock, sceneId, backId, playerId } = await templateTable();
+    playerSock.send({ type: 'template:place', sceneId, ...fireball, x: 99, y: -3, angle: -90 });
+    const { scene } = await otherSock.until('scene', (m) => labels(m.scene).includes('Fireball'));
+    // The origin is kept on the map and the angle normalised.
+    expect(scene!.templates[0]).toMatchObject({
+      sceneId,
+      shape: 'sphere',
+      size: 20,
+      x: 10,
+      y: 0,
+      angle: 270,
+      ownerUserId: playerId,
+      tokenId: null,
+      hidden: false,
+      linger: false,
+    });
+    expect(labels((await gmSock.until('scene', (m) => labels(m.scene).includes('Fireball'))).scene)).toEqual(['Fireball']);
+
+    // Table screens see them too.
+    const { data: display } = await new Client().call('POST', '/api/displays');
+    const tv = await Sock.open(`ws://${base}/ws?display=${display.token}`, '');
+    await tv.until('display:unpaired');
+    await gm.call('POST', `/api/campaigns/${campaignId}/displays`, { code: display.code });
+    expect(labels((await tv.until('hello')).scene)).toEqual(['Fireball']);
+    tv.close();
+
+    // Not on a scene that isn't in play, which only the GM can use.
+    playerSock.send({ type: 'template:place', sceneId: backId, ...fireball });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'That scene is not in play' });
+    gmSock.send({ type: 'scene:view', sceneId: backId });
+    await gmSock.until('scene', (m) => m.scene?.id === backId);
+    gmSock.send({ type: 'template:place', sceneId: backId, ...fireball, label: 'Trap' });
+    const back = await gmSock.until('scene', (m) => m.scene?.id === backId && m.scene.templates.length === 1);
+    expect(back.scene!.templates[0]).toMatchObject({ label: 'Trap', x: 5, y: 4 });
+
+    // Bad shapes and sizes never reach the game.
+    playerSock.send({ type: 'template:place', sceneId, ...fireball, shape: 'donut' });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'Invalid message' });
+    playerSock.send({ type: 'template:place', sceneId, ...fireball, size: 0 });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'Invalid message' });
+  });
+
+  it('keeps hidden templates from players and table screens', async () => {
+    const { gmSock, playerSock, otherSock, sceneId } = await templateTable();
+    playerSock.send({ type: 'template:place', sceneId, ...fireball, hidden: true });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'Only the GM can hide templates' });
+
+    gmSock.send({ type: 'template:place', sceneId, ...fireball, label: 'Glyph', hidden: true, linger: true });
+    await gmSock.until('scene', (m) => m.scene?.templates.length === 1);
+    playerSock.send({ type: 'template:place', sceneId, ...fireball, label: 'Web', shape: 'cube', linger: true });
+    const gmView = await gmSock.until('scene', (m) => m.scene?.templates.length === 2);
+    expect(labels(gmView.scene)).toEqual(['Glyph', 'Web']);
+    const seen = await otherSock.until('scene', (m) => labels(m.scene).includes('Web'));
+    expect(labels(seen.scene)).toEqual(['Web']);
+
+    // Players can't find, move or remove what they can't see, nor hide what they can.
+    const [glyph, web] = gmView.scene!.templates;
+    playerSock.send({ type: 'template:delete', templateId: glyph!.id });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'Template not found' });
+    playerSock.send({ type: 'template:update', templateId: web!.id, hidden: true });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'Only the GM can hide templates' });
+
+    // Revealing it shows it to everyone.
+    gmSock.send({ type: 'template:update', templateId: glyph!.id, hidden: false });
+    expect(labels((await otherSock.until('scene', (m) => m.scene?.templates.length === 2)).scene)).toEqual(['Glyph', 'Web']);
+  });
+
+  it('lets owners and the GM move, turn and remove templates, and the GM clear them all', async () => {
+    const { gmSock, playerSock, otherSock, sceneId } = await templateTable();
+    playerSock.send({ type: 'template:place', sceneId, shape: 'cone', size: 15, x: 3, y: 2.5, angle: 0, color: '#3366ff', label: 'Burning Hands', linger: true });
+    const placed = await otherSock.until('scene', (m) => m.scene?.templates.length === 1);
+    const cone = placed.scene!.templates[0]!;
+
+    otherSock.send({ type: 'template:update', templateId: cone.id, angle: 90 });
+    expect(await otherSock.until('error')).toMatchObject({ message: "That's not your template" });
+    otherSock.send({ type: 'template:delete', templateId: cone.id });
+    expect(await otherSock.until('error')).toMatchObject({ message: "That's not your template" });
+
+    playerSock.send({ type: 'template:update', templateId: cone.id, x: 4, y: 3.5, angle: 450, label: 'Hands' });
+    const moved = await otherSock.until('scene', (m) => m.scene?.templates[0]?.label === 'Hands');
+    expect(moved.scene!.templates[0]).toMatchObject({ x: 4, y: 3.5, angle: 90, size: 15 });
+    gmSock.send({ type: 'template:update', templateId: cone.id, size: 30 });
+    expect((await playerSock.until('scene', (m) => m.scene?.templates[0]?.size === 30)).scene!.templates[0]).toMatchObject({ angle: 90 });
+    playerSock.send({ type: 'template:delete', templateId: cone.id });
+    await otherSock.until('scene', (m) => m.scene?.templates.length === 0);
+
+    playerSock.send({ type: 'template:place', sceneId, ...fireball, linger: true });
+    otherSock.send({ type: 'template:place', sceneId, ...fireball, label: 'Shatter', size: 10, linger: true });
+    const two = await gmSock.until('scene', (m) => m.scene?.templates.length === 2);
+    gmSock.send({ type: 'template:delete', templateId: two.scene!.templates.find((t) => t.label === 'Shatter')!.id });
+    expect(labels((await otherSock.until('scene', (m) => labels(m.scene).join() === 'Fireball')).scene)).toEqual(['Fireball']);
+    playerSock.send({ type: 'template:clear', sceneId });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'Only the GM can do that' });
+    gmSock.send({ type: 'template:clear', sceneId });
+    await playerSock.until('scene', (m) => m.scene?.templates.length === 0);
+  });
+
+  it('moves an Emanation with its creature and hides it with the creature', async () => {
+    const { gmSock, playerSock, otherSock, sceneId, ana } = await templateTable();
+    const guardians = { type: 'template:place', sceneId, shape: 'emanation', size: 15, x: 0, y: 0, angle: 0, color: '#f1c40f', label: 'Spirit Guardians', linger: true };
+    otherSock.send({ ...guardians, tokenId: ana.id });
+    expect(await otherSock.until('error')).toMatchObject({ message: "That's not your token" });
+    playerSock.send({ ...guardians, shape: 'sphere', tokenId: ana.id });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'Only an Emanation can follow a token' });
+
+    playerSock.send({ ...guardians, tokenId: ana.id });
+    let seen = await otherSock.until('scene', (m) => m.scene?.templates.length === 1);
+    expect(seen.scene!.templates[0]).toMatchObject({ tokenId: ana.id, x: 2, y: 2, span: 1 });
+
+    // It follows the token, and dragging the template itself doesn't detach it.
+    playerSock.send({ type: 'token:move', tokenId: ana.id, col: 6, row: 5 });
+    seen = await otherSock.until('scene', (m) => m.scene?.templates[0]?.x === 6);
+    expect(seen.scene!.templates[0]).toMatchObject({ x: 6, y: 5 });
+    playerSock.send({ type: 'template:update', templateId: seen.scene!.templates[0]!.id, x: 1, y: 1, size: 10 });
+    seen = await otherSock.until('scene', (m) => m.scene?.templates[0]?.size === 10);
+    expect(seen.scene!.templates[0]).toMatchObject({ x: 6, y: 5 });
+    gmSock.send({ type: 'token:update', tokenId: ana.id, size: 2 });
+    expect((await otherSock.until('scene', (m) => m.scene?.templates[0]?.span === 2)).scene!.templates[0]).toMatchObject({ x: 6, y: 5 });
+
+    // Hiding the creature hides its aura from other players; its owner and the GM still see both.
+    gmSock.send({ type: 'token:update', tokenId: ana.id, hidden: true });
+    seen = await otherSock.until('scene', (m) => m.scene?.tokens.length === 0);
+    expect(seen.scene!.templates).toEqual([]);
+    expect((await playerSock.until('scene', (m) => m.scene?.tokens[0]?.hidden === true)).scene!.templates).toHaveLength(1);
+
+    // Removing the creature removes its aura.
+    gmSock.send({ type: 'token:delete', tokenId: ana.id });
+    expect((await gmSock.until('scene', (m) => m.scene?.tokens.length === 0)).scene!.templates).toEqual([]);
+  });
+
+  it('clears one-shot templates when the turn passes or their owner places another', async () => {
+    const { gmSock, playerSock, otherSock, sceneId } = await templateTable();
+    playerSock.send({ type: 'template:place', sceneId, ...fireball });
+    playerSock.send({ type: 'template:place', sceneId, ...fireball, label: 'Fireball 2', x: 2 });
+    await gmSock.until('scene', (m) => labels(m.scene).includes('Fireball 2'));
+    otherSock.send({ type: 'template:place', sceneId, ...fireball, label: 'Cloudkill', linger: true });
+    const seen = await gmSock.until('scene', (m) => labels(m.scene).includes('Cloudkill'));
+    expect(labels(seen.scene)).toEqual(['Fireball 2', 'Cloudkill']);
+
+    gmSock.send({ type: 'combat:start', fromScene: true });
+    await gmSock.until('combat', (m) => m.combat !== null);
+    gmSock.send({ type: 'combat:turn', dir: 'next' });
+    const after = await otherSock.until('scene', (m) => !labels(m.scene).includes('Fireball 2') && labels(m.scene).includes('Cloudkill'));
+    expect(labels(after.scene)).toEqual(['Cloudkill']);
+  });
+});
