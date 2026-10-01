@@ -36,6 +36,20 @@
     width: auto;
     margin: 10px 12px 0;
   }
+
+  /* Labels and their unread/live markers stay on one line. */
+  .mobile-switch button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding-inline: 8px;
+    white-space: nowrap;
+  }
+
+  .mobile-switch .center-switch__live {
+    margin-left: 0;
+  }
 }
 
 /* Turn order overlay on the map (bottom left, clear of the toolbar and zoom buttons). */

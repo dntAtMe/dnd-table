@@ -21,11 +21,19 @@
 
 /* The Compendium's segment in the phone switch is an icon, so four segments still fit. */
 .mobile-switch .mobile-switch__icon {
+  position: relative;
   flex: none;
   display: grid;
   place-items: center;
   width: 46px;
   padding: 0;
+}
+
+/* The new-wiki-page dot sits on the icon's corner. */
+.mobile-switch__icon .center-switch__live {
+  position: absolute;
+  top: 6px;
+  right: 8px;
 }
 
 /* ---------- kind badges ---------- */
