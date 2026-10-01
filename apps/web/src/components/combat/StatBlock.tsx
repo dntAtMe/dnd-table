@@ -44,8 +44,8 @@ const SECTIONS: { key: 'traits' | 'actions' | 'bonusActions' | 'reactions' | 'le
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-/** A monster's stat block for the GM, with tap-to-roll checks, saves, attacks and damage. */
-export function StatBlock({ monster: m, name = m.name, send }: Props) {
+/** Rolls for a monster: hidden from players by default, with advantage for the next d20 roll. */
+export function useMonsterRolls(name: string, send: Send) {
   const [mode, setMode] = useState<D20Mode>('normal');
   const [visibility, setVisibility] = useState<Visibility>('gm');
 
@@ -58,6 +58,38 @@ export function StatBlock({ monster: m, name = m.name, send }: Props) {
     const expr = damageExpression(damage);
     roll(`${label} damage${crit ? ' (critical)' : ''}`, crit ? criticalDamage(expr) : expr);
   };
+  return { mode, setMode, visibility, setVisibility, rollD20, rollDamage };
+}
+
+export type MonsterRolls = ReturnType<typeof useMonsterRolls>;
+
+/** Advantage for the next d20 roll, and whether rolls are hidden from players. */
+export function MonsterRollControls({ rolls: r }: { rolls: MonsterRolls }) {
+  return (
+    <div className="statblock__controls">
+      <div className="segmented" role="radiogroup" aria-label="Next d20 roll">
+        {(['disadvantage', 'normal', 'advantage'] as const).map((x) => (
+          <button key={x} type="button" role="radio" aria-checked={r.mode === x} className={r.mode === x ? 'is-active' : ''} onClick={() => r.setMode(x)}>
+            {x === 'normal' ? 'Normal' : x === 'advantage' ? 'Adv.' : 'Dis.'}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        className={`toggle toggle--sm${r.visibility === 'gm' ? ' toggle--on' : ''}`}
+        onClick={() => r.setVisibility(r.visibility === 'gm' ? 'public' : 'gm')}
+        aria-pressed={r.visibility === 'gm'}
+      >
+        Hidden rolls
+      </button>
+    </div>
+  );
+}
+
+/** A monster's stat block for the GM, with tap-to-roll checks, saves, attacks and damage. */
+export function StatBlock({ monster: m, name = m.name, send }: Props) {
+  const rolls = useMonsterRolls(name, send);
+  const { rollD20, rollDamage } = rolls;
 
   const speed = monsterSpeedText(m);
   const skills = Object.keys(m.skills) as Skill[];
@@ -72,23 +104,7 @@ export function StatBlock({ monster: m, name = m.name, send }: Props) {
         </p>
       </header>
 
-      <div className="statblock__controls">
-        <div className="segmented" role="radiogroup" aria-label="Next d20 roll">
-          {(['disadvantage', 'normal', 'advantage'] as const).map((x) => (
-            <button key={x} type="button" role="radio" aria-checked={mode === x} className={mode === x ? 'is-active' : ''} onClick={() => setMode(x)}>
-              {x === 'normal' ? 'Normal' : x === 'advantage' ? 'Adv.' : 'Dis.'}
-            </button>
-          ))}
-        </div>
-        <button
-          type="button"
-          className={`toggle toggle--sm${visibility === 'gm' ? ' toggle--on' : ''}`}
-          onClick={() => setVisibility(visibility === 'gm' ? 'public' : 'gm')}
-          aria-pressed={visibility === 'gm'}
-        >
-          Hidden rolls
-        </button>
-      </div>
+      <MonsterRollControls rolls={rolls} />
 
       <dl className="statblock__core">
         <div>
@@ -204,21 +220,33 @@ function Line({ label, text, rich = false }: { label: string; text: string; rich
 interface ActionProps {
   action: MonsterAction;
   monsterId: string;
+  /** Name and roll buttons only; the name shows the description on demand. */
+  compact?: boolean;
   onD20: (label: string, bonus: number) => void;
   onDamage: (label: string, damage: readonly MonsterDamage[], crit?: boolean) => void;
 }
 
-function ActionEntry({ action: a, monsterId, onD20, onDamage }: ActionProps) {
+export function ActionEntry({ action: a, monsterId, compact = false, onD20, onDamage }: ActionProps) {
+  const [open, setOpen] = useState(!compact);
   const attack = a.attack;
   const save = a.save;
+  const title = `${a.name}${a.usage ? ` (${a.usage})` : ''}`;
   return (
-    <div className="statblock__action">
+    <div className={`statblock__action${compact ? ' statblock__action--compact' : ''}`}>
       <p className="statblock__desc">
-        <strong>
-          {a.name}
-          {a.usage && ` (${a.usage})`}.
-        </strong>{' '}
-        <RichText text={a.description} self={{ kind: 'monster', id: monsterId }} inline />
+        {compact ? (
+          <button type="button" className="statblock__name-toggle" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+            {title}
+          </button>
+        ) : (
+          <strong>{title}.</strong>
+        )}
+        {open && (
+          <>
+            {' '}
+            <RichText text={a.description} self={{ kind: 'monster', id: monsterId }} inline />
+          </>
+        )}
       </p>
       {(attack || save?.damage) && (
         <div className="statblock__rolls">
