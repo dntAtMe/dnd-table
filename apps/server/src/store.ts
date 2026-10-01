@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { CampaignSummary, CharacterRecord, LogEntry, Role, SceneSummary, Token, User, Visibility } from '@dnd/protocol';
-import type { Character, Grid } from '@dnd/rules';
+import { DEFAULT_SCENE_VISION, type Character, type Grid, type SceneVision } from '@dnd/rules';
 import type { Encounter } from './combat';
 import type { DB } from './db';
 import { hashToken, newToken, randomCode } from './security';
@@ -46,6 +46,9 @@ export interface SceneRecord extends SceneSummary {
   /** Encoded MapData (walls, doors, terrain); '' for none. */
   map: string;
 }
+
+/** A token's light source and senses, kept beside the token row. */
+export type TokenVision = Pick<Token, 'light' | 'senses'>;
 
 type Row = Record<string, unknown>;
 
@@ -418,6 +421,37 @@ export class Store {
       .prepare('UPDATE tokens SET name = ?, color = ? WHERE character_id = ? RETURNING scene_id')
       .all(name, color, characterId) as Row[];
     return [...new Set(rows.map((r) => r.scene_id as string))];
+  }
+
+  // ---------- lighting & vision ----------
+
+  sceneVision(sceneId: string): SceneVision {
+    const row = this.db.prepare('SELECT data FROM scene_vision WHERE scene_id = ?').get(sceneId) as Row | undefined;
+    return { ...DEFAULT_SCENE_VISION, ...(row ? (JSON.parse(row.data as string) as Partial<SceneVision>) : {}) };
+  }
+
+  setSceneVision(sceneId: string, vision: SceneVision): void {
+    this.db
+      .prepare('INSERT INTO scene_vision (scene_id, data) VALUES (?, ?) ON CONFLICT (scene_id) DO UPDATE SET data = excluded.data')
+      .run(sceneId, JSON.stringify(vision));
+  }
+
+  /** Light sources and senses of the tokens on a scene that have any, by token id. */
+  tokenVision(sceneId: string): Map<string, TokenVision> {
+    const rows = this.db
+      .prepare('SELECT v.token_id, v.data FROM token_vision v JOIN tokens t ON t.id = v.token_id WHERE t.scene_id = ?')
+      .all(sceneId) as Row[];
+    return new Map(rows.map((r) => [r.token_id as string, JSON.parse(r.data as string) as TokenVision]));
+  }
+
+  setTokenVision(tokenId: string, vision: TokenVision): void {
+    if (!vision.light && !vision.senses) {
+      this.db.prepare('DELETE FROM token_vision WHERE token_id = ?').run(tokenId);
+      return;
+    }
+    this.db
+      .prepare('INSERT INTO token_vision (token_id, data) VALUES (?, ?) ON CONFLICT (token_id) DO UPDATE SET data = excluded.data')
+      .run(tokenId, JSON.stringify(vision));
   }
 
   // ---------- characters ----------

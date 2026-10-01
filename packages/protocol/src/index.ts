@@ -1,9 +1,11 @@
 // Shapes shared by the server and the web client: REST payloads and WebSocket messages.
 import { z } from 'zod';
 import { MapMessages } from './map';
+import { VisionMessages } from './vision';
 
 export * from './map';
-import { ABILITIES, CHARACTER_VERSION, CONDITION_IDS, MAX_EXHAUSTION, SKILL_IDS, type Character, type Grid, type HealthStatus, type RollResult } from '@dnd/rules';
+export * from './vision';
+import { ABILITIES, CHARACTER_VERSION, CONDITION_IDS, MAX_EXHAUSTION, SKILL_IDS, type Character, type Grid, type HealthStatus, type LightSource, type RollResult, type SceneVision, type TokenSenses } from '@dnd/rules';
 
 export type Role = 'gm' | 'player';
 /** Who is on the other end of a socket. Displays are paired table screens with no user. */
@@ -73,6 +75,10 @@ export interface Token {
   ownerUserId: string | null;
   /** Character this token represents, if any. */
   characterId: string | null;
+  /** Light the token carries (torch, lantern, spell…), if any. */
+  light?: LightSource;
+  /** Darkvision, blindsight and truesight; darkvision defaults to the character's. */
+  senses?: TokenSenses;
 }
 
 export interface SceneSummary {
@@ -93,6 +99,14 @@ export interface SceneView extends SceneSummary {
   /** Encoded MapData: walls, doors and terrain. Players get closed secret doors as walls. */
   map: string;
   tokens: Token[];
+  /** Lighting and vision settings. */
+  vision: SceneVision;
+  /**
+   * With vision on, players and table screens get the cells their tokens see right now (a base64
+   * FogMask), and those of them seen only in dim light. Their `fog` then also counts what they see.
+   */
+  visible?: string;
+  dim?: string;
 }
 
 /** A rectangle of the map in map pixels, used to point table screens at part of the map. */
@@ -376,6 +390,7 @@ export const ClientMessage = z.discriminatedUnion('type', [
   }),
 
   ...MapMessages,
+  ...VisionMessages,
 ]);
 export type ClientMessage = z.infer<typeof ClientMessage>;
 

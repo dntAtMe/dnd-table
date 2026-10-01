@@ -114,6 +114,16 @@ const MIGRATIONS = [
     updated_at TEXT NOT NULL DEFAULT ${NOW}
   );
   `,
+  `
+  CREATE TABLE scene_vision (
+    scene_id TEXT PRIMARY KEY REFERENCES scenes(id) ON DELETE CASCADE,
+    data TEXT NOT NULL
+  );
+  CREATE TABLE token_vision (
+    token_id TEXT PRIMARY KEY REFERENCES tokens(id) ON DELETE CASCADE,
+    data TEXT NOT NULL
+  );
+  `,
 ];
 
 export function openDb(file: string): DB {
