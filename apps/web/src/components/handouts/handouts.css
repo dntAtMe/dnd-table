@@ -438,6 +438,11 @@
   box-shadow: 0 20px 60px rgb(0 0 0 / 0.5);
 }
 
+/* New rolls still pop up over a handout on the table. */
+.showcase ~ .table__spotlight {
+  z-index: 7;
+}
+
 /* Players: a dismissable popup over the whole page. */
 .showcase--popup {
   position: fixed;

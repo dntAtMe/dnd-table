@@ -19,7 +19,8 @@ import { CombatantCard } from '../components/combat/InitiativeTracker';
 import { tokenDecorations } from '../components/combat/TokenDecor';
 import { LevelUp } from '../components/character/LevelUp';
 import { HandoutsPanel } from '../components/handouts/HandoutsPanel';
-import { useHandoutNotice } from '../components/handouts/Showcase';
+import { ShowcaseStatus } from '../components/handouts/HandoutsPanel';
+import { ShowcaseOverlay, useHandoutNotice, usePlayerShowcase } from '../components/handouts/Showcase';
 import { useGameSocket, type SocketStatus } from '../lib/useGameSocket';
 
 const STATUS_TEXT: Record<SocketStatus, string> = {
@@ -123,6 +124,7 @@ export function Campaign({ user }: { user: User }) {
   const isGm = hello?.you.role === 'gm';
   const unreadHandouts = isGm ? 0 : state.handouts.filter((h) => h.unread).length;
   const [handoutNotice, dismissHandoutNotice] = useHandoutNotice(state.handouts, Boolean(hello) && !isGm);
+  const [playerShowcase, closePlayerShowcase] = usePlayerShowcase(isGm ? null : state.showcase);
   const selectedToken = scene?.tokens.find((t) => t.id === selectedTokenId) ?? null;
   const { combat } = state;
   const decorations = useMemo(
@@ -352,6 +354,7 @@ export function Campaign({ user }: { user: User }) {
               </button>
             </div>
           )}
+          {isGm && state.showcase && <ShowcaseStatus showcase={state.showcase} send={send} className="showcase-status--map" />}
         </main>
         <section className="campaign__sheet" data-tab="sheet">
           <MobileSwitch tab={tab} setTab={setTab} live={Boolean(combat)} unread={unreadHandouts} />
@@ -415,6 +418,8 @@ export function Campaign({ user }: { user: User }) {
           </button>
         ))}
       </nav>
+
+      {playerShowcase && <ShowcaseOverlay showcase={playerShowcase} onClose={closePlayerShowcase} />}
 
       {handoutNotice && (
         <div className="handout-notice" role="status">

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RollView } from '../components/RollView';
 import { InitiativeStrip } from '../components/combat/InitiativeStrip';
 import { tokenDecorations } from '../components/combat/TokenDecor';
+import { ShowcaseOverlay } from '../components/handouts/Showcase';
 import { MapView } from '../components/map/MapView';
 import { api, errorMessage } from '../lib/api';
 import { useGameSocket } from '../lib/useGameSocket';
@@ -185,8 +186,9 @@ export function Table() {
             <InitiativeStrip combat={state.combat} size="lg" max={7} />
           </div>
         )}
+        {state.showcase && <ShowcaseOverlay showcase={state.showcase} />}
         {spotlight && (
-          <div className={`table__spotlight${state.scene ? ' table__spotlight--over-map' : ''}`}>
+          <div className={`table__spotlight${state.scene || state.showcase ? ' table__spotlight--over-map' : ''}`}>
             <Spotlight entry={spotlight} />
           </div>
         )}
