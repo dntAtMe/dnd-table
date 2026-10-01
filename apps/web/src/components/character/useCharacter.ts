@@ -23,7 +23,8 @@ export interface CharacterActions {
   setMode: (mode: D20Mode) => void;
   visibility: Visibility;
   setVisibility: (v: Visibility) => void;
-  rollD20: (kind: D20TestKind, label: string, bonus: number, ability?: Ability) => void;
+  /** `initiative` also sets the character's initiative in a running combat. */
+  rollD20: (kind: D20TestKind, label: string, bonus: number, ability?: Ability, opts?: { initiative?: boolean }) => void;
   rollDamage: (label: string, expr: string, crit?: boolean) => void;
   roll: (label: string, expr: string) => void;
   patchState: (patch: Partial<CharacterState>) => void;
@@ -47,12 +48,13 @@ export function useCharacter(record: CharacterRecord, canEdit: boolean, send: Se
   };
 
   const roll = useCallback(
-    (label: string, expr: string) => send({ type: 'roll', expr, label: `${data.name}: ${label}`.slice(0, 80), visibility }),
+    (label: string, expr: string, initiativeFor?: string) =>
+      send({ type: 'roll', expr, label: `${data.name}: ${label}`.slice(0, 80), visibility, ...(initiativeFor && { initiativeFor }) }),
     [send, data.name, visibility],
   );
 
   const rollD20 = useCallback(
-    (kind: D20TestKind, label: string, bonus: number, ability?: Ability) => {
+    (kind: D20TestKind, label: string, bonus: number, ability?: Ability, opts?: { initiative?: boolean }) => {
       const test = d20Test(data, kind, bonus, ability, mode);
       setMode('normal');
       if (test.autoFail) {
@@ -60,9 +62,9 @@ export function useCharacter(record: CharacterRecord, canEdit: boolean, send: Se
         return;
       }
       if (test.notes.length) flash(test.notes.join(' · '));
-      roll(test.notes.length ? `${label} (${test.notes.join(', ')})` : label, test.expr);
+      roll(test.notes.length ? `${label} (${test.notes.join(', ')})` : label, test.expr, opts?.initiative && canEdit ? record.id : undefined);
     },
-    [data, mode, roll, send, visibility],
+    [data, mode, roll, send, visibility, canEdit, record.id],
   );
 
   const rollDamage = useCallback(
