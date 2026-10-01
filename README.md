@@ -24,6 +24,8 @@ Phases 1–3 are done:
 - [x] Tokens: drag to move (players move their own), sizes Medium–Gargantuan, hidden tokens
 - [x] Fog of war painted with a brush; hidden or fogged tokens never reach player devices
 - [x] Measuring tool, pings, and table screens that follow the GM's camera
+- [x] Map editor: walls, doors (open/closed/locked, secret), terrain (rock, difficult, water) and
+      resizable blank grids; players can't walk through walls, and the ruler counts difficult terrain
 - [x] Character creator (class → background → species → ability scores → choices → equipment)
 - [x] Character sheet computed from the 2024 rules: tap any bonus to roll; conditions and exhaustion
       apply automatically; HP, death saves, spell slots, class resources, rests, inventory, SRD spells
@@ -55,11 +57,23 @@ In dev, Vite (port 5173) serves the client and proxies `/api`, `/ws` and `/files
    across the map, then nudge *Shift X/Y* until the lines match.
 3. Add tokens with **+ Token** (creatures, hidden creatures, or one per player). Select a token to
    rename it, resize it, hide it or give a player control of it.
-4. Turn on fog of war and paint with **Reveal**/**Hide** (right-drag or two fingers still pan).
-5. Press **Show** to put the scene in front of players and table screens. **Table follows me** makes
+4. Draw the map with the editor tools (GM only):
+   - **Wall**: drag along grid lines; a click places one edge. **Erase** removes walls and doors.
+   - **Door**: click an edge to add a door, click again to cycle open → closed → locked.
+     Shift-click (or the *Secret door* toggle) makes it secret: players and the TV see a plain wall
+     until it is opened.
+   - **Terrain**: paint floor, solid rock (impassable), difficult terrain or water (both cost an extra
+     5 ft per square). On a blank scene, *Fill with rock* under **Map editor** and carve rooms with floor.
+   - **Map editor** in the sidebar adds or removes rows and columns on each side of a blank scene;
+     tokens, fog, walls and terrain stay put.
+   - With **Move**, click a door to open or close it. Players can open and close unlocked doors next
+     to their token, and can't move their token through walls, closed doors or solid rock.
+5. Turn on fog of war and paint with **Reveal**/**Hide** (right-drag or two fingers still pan).
+6. Press **Show** to put the scene in front of players and table screens. **Table follows me** makes
    the TV show what you're looking at.
 
-Map controls: drag to pan, scroll or pinch to zoom, double-click to ping.
+Map controls: drag to pan, scroll or pinch to zoom, double-click to ping. **Measure** shows the
+movement cost through difficult terrain ("30 ft (40 ft move)") and turns red when a wall is in the way.
 
 ### Single-port production mode
 
@@ -85,14 +99,15 @@ Back it up by copying that folder.
 ```
 apps/server       Fastify + WebSockets, SQLite (node:sqlite), authoritative game state
 apps/web          React + Vite client: GM, player and table views
-packages/rules    5e rules shared by client and server: dice, grid & fog, SRD data, character
-                  model and derived stats, creator and level-up logic
+packages/rules    5e rules shared by client and server: dice, grid & fog, walls/doors/terrain and
+                  movement, SRD data, character model and derived stats, creator and level-up logic
 packages/protocol REST and WebSocket message types
 ```
 
 The server is the source of truth. Clients send intents (e.g. "roll 2d20kh1+3, GM only"),
-the server resolves them and sends each connection only what its role may see. Hidden rolls
-never reach player devices or table screens.
+the server resolves them and sends each connection only what its role may see. Hidden rolls,
+hidden or fogged tokens, secret doors and walls or terrain under fog never reach player devices or
+table screens.
 
 ```bash
 pnpm test        # vitest: dice engine + server integration tests
