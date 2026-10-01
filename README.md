@@ -90,6 +90,21 @@ movement cost through difficult terrain ("30 ft (40 ft move)") and turns red whe
 5. Players and table screens see the order and whose turn it is, but never hidden creatures, and
    only Healthy / Bloodied / Down for creatures that aren't theirs.
 
+### Area templates
+
+1. Anyone picks **Area** in the map toolbar, then a spell (its shape and size are read from the SRD
+   text, e.g. Fireball → 20-foot-radius Sphere) or a shape and size: Cone, Cube, Cylinder,
+   Emanation, Line or Sphere, as in the 2024 rules.
+2. Press where the area starts and drag to aim it; the label counts the creatures caught. Spheres
+   and Cylinders start on a grid corner, Cones and Lines on a corner or the middle of a cell edge,
+   a Cube from one corner towards the opposite one. An Emanation pressed on your token follows it.
+3. A square is affected when the area covers at least half of it (Emanations: every square within
+   reach of the creature's space). Caught creatures are ringed in the template's colour.
+4. Select a template (with **Move**) to drag it, turn it by its handle, resize, keep or remove it,
+   or post who's caught to the log for saving throws. Players change only their own templates and
+   place them on the scene in play; the GM can also hide templates from players or clear them all.
+5. Without **Keep**, a template disappears when the combat turn passes or when you place another.
+
 ### Single-port production mode
 
 ```bash
