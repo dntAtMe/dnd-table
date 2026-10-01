@@ -3,6 +3,7 @@ import { FogMask, brushCells, gridDistanceFeet, gridGeometry, pointToCell } from
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useElementSize } from '../../lib/useElementSize';
 import type { Ping } from '../../lib/useGameSocket';
+import { TokenDecor, type TokenDecoration } from '../combat/TokenDecor';
 import { fitRect, screenToMap, visibleRect, zoomAt, type Camera } from './camera';
 import { fogPath } from './fogPath';
 
@@ -28,6 +29,8 @@ export interface MapViewProps {
   onPaintFog?: (cells: number[], reveal: boolean) => void;
   pings?: Ping[];
   onPing?: (x: number, y: number) => void;
+  /** Combat markers per token id (active turn, HP bar, Bloodied). */
+  decorations?: Record<string, TokenDecoration>;
   /** Overlay controls drawn above the map (toolbars). */
   children?: ReactNode;
 }
@@ -86,9 +89,10 @@ interface TokenShapeProps {
   mine?: boolean;
   movable?: boolean;
   dragging?: boolean;
+  decoration?: TokenDecoration;
 }
 
-function TokenShape({ token, cell, x, y, selected, mine, movable, dragging }: TokenShapeProps) {
+function TokenShape({ token, cell, x, y, selected, mine, movable, dragging, decoration }: TokenShapeProps) {
   const d = token.size * cell;
   const r = d / 2 - Math.max(2, cell * 0.06);
   const classes = ['token'];
@@ -107,6 +111,7 @@ function TokenShape({ token, cell, x, y, selected, mine, movable, dragging }: To
       <text x={d / 2} y={d + cell * 0.08} className="token__name" fontSize={Math.max(10, cell * 0.22)}>
         {token.name}
       </text>
+      {decoration && <TokenDecor decoration={decoration} d={d} cell={cell} />}
     </g>
   );
 }
@@ -126,6 +131,7 @@ export function MapView({
   onPaintFog,
   pings = [],
   onPing,
+  decorations,
   children,
 }: MapViewProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -460,6 +466,7 @@ export function MapView({
                   mine={!isGm && userId !== undefined && t.ownerUserId === userId}
                   movable={interactive && canMove(t)}
                   dragging={dragging}
+                  decoration={decorations?.[t.id]}
                 />
               );
             })}

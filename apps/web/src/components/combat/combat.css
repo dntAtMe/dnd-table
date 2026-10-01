@@ -767,3 +767,63 @@ div.init-strip__open {
   font-weight: 650;
   color: var(--muted);
 }
+
+/* ---------- map token decorations ---------- */
+.token-decor__turn {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 4;
+  stroke-dasharray: 10 6;
+  animation: token-turn 6s linear infinite;
+}
+
+@keyframes token-turn {
+  to {
+    stroke-dashoffset: -96;
+  }
+}
+
+.token-decor__track {
+  fill: rgb(0 0 0 / 0.6);
+}
+
+.token-decor__fill {
+  fill: var(--success);
+}
+
+.token-decor__bar--bloodied .token-decor__fill {
+  fill: var(--danger);
+}
+
+.token-decor__temp {
+  fill: none;
+  stroke: var(--gm);
+  stroke-width: 1.5;
+}
+
+.token-decor__badge circle {
+  fill: var(--danger);
+  stroke: #fff;
+  stroke-width: 1.5;
+}
+
+.token-decor__badge path {
+  fill: #fff;
+}
+
+.token-decor__badge--down circle {
+  fill: #3a3430;
+}
+
+.token-decor__badge--down path {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .token-decor__turn {
+    animation: none;
+  }
+}

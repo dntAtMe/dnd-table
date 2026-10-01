@@ -1,6 +1,6 @@
 import type { CameraRect, User } from '@dnd/protocol';
 import { gridGeometry, pointToCell } from '@dnd/rules';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router';
 import { DiceTray } from '../components/DiceTray';
 import { LogFeed } from '../components/LogFeed';
@@ -15,6 +15,7 @@ import { CharacterPanel } from '../components/character/CharacterSheet';
 import { CombatPanel } from '../components/combat/CombatPanel';
 import { InitiativeStrip } from '../components/combat/InitiativeStrip';
 import { CombatantCard } from '../components/combat/InitiativeTracker';
+import { tokenDecorations } from '../components/combat/TokenDecor';
 import { LevelUp } from '../components/character/LevelUp';
 import { useGameSocket, type SocketStatus } from '../lib/useGameSocket';
 
@@ -109,6 +110,10 @@ export function Campaign({ user }: { user: User }) {
   const isGm = hello?.you.role === 'gm';
   const selectedToken = scene?.tokens.find((t) => t.id === selectedTokenId) ?? null;
   const { combat } = state;
+  const decorations = useMemo(
+    () => tokenDecorations(combat, scene?.tokens ?? [], { isGm, userId: hello?.you.userId }),
+    [combat, scene?.tokens, isGm, hello?.you.userId],
+  );
   const activeCombatant = combat?.combatants.find((c) => c.id === combat.activeId);
   const myTurn = Boolean(activeCombatant && !isGm && activeCombatant.ownerUserId === hello?.you.userId);
   const selectedCombatant = selectedToken
@@ -269,6 +274,7 @@ export function Campaign({ user }: { user: User }) {
               onPaintFog={(cells, reveal) => send({ type: 'fog:paint', sceneId: scene.id, cells, reveal })}
               pings={state.pings}
               onPing={(x, y) => send({ type: 'ping', sceneId: scene.id, x, y })}
+              decorations={decorations}
             >
               <MapToolbar
                 tools={isGm && scene.fogEnabled ? GM_TOOLS : PLAYER_TOOLS}
