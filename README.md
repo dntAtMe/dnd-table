@@ -77,6 +77,24 @@ In dev, Vite (port 5173) serves the client and proxies `/api`, `/ws` and `/files
 Map controls: drag to pan, scroll or pinch to zoom, double-click to ping. **Measure** shows the
 movement cost through difficult terrain ("30 ft (40 ft move)") and turns red when a wall is in the way.
 
+### Lighting and vision
+
+Under **Scene settings → Lighting & vision** the GM sets the scene's light (bright daylight, dim
+twilight or moonlight, darkness) and turns on **Token vision**: each player then sees only what their
+own tokens can see, and table screens what the whole party sees. Walls, closed doors and solid rock
+block sight; creatures out of sight never reach player devices.
+
+- Select a token to give it a light (candle, torch, lamp, hooded lantern, *Light*, *Daylight*, or
+  custom bright/dim distances) and darkvision, blindsight or truesight. Character tokens get their
+  species' darkvision automatically. Players can light their own token's torch.
+- 2024 rules: dim light is lightly obscured, darkness heavily obscured (can't see into it).
+  Darkvision sees dim light as bright and darkness as dim within its range; blindsight and
+  truesight see regardless of light within theirs. Ranges are grid distances, like the ruler.
+- Out-of-sight areas are darkened, dim ones shaded. **Dynamic fog** (it turns fog of war on) reveals
+  whatever players see, so explored areas stay mapped but dimmed; the GM can still paint fog.
+- The GM sees everything, with light levels shaded and each light's reach outlined, and can pick
+  *As <player>* on the map toolbar to preview a player's view.
+
 ### Running combat
 
 1. Open **Combat** (next to Map; on phones it shares the Sheet tab) and start, either with every
