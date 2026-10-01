@@ -8,3 +8,4 @@ export * from './mapdata';
 export * from './movement';
 export * from './monsters';
 export * from './srd';
+export * from './vision';
