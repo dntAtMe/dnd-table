@@ -12,6 +12,9 @@ import { SceneSettings, ScenesPanel } from '../components/ScenePanels';
 import { AddTokenMenu, TokenInspector } from '../components/TokenPanels';
 import { CharacterCreator } from '../components/character/CharacterCreator';
 import { CharacterPanel } from '../components/character/CharacterSheet';
+import { CombatPanel } from '../components/combat/CombatPanel';
+import { InitiativeStrip } from '../components/combat/InitiativeStrip';
+import { CombatantCard } from '../components/combat/InitiativeTracker';
 import { LevelUp } from '../components/character/LevelUp';
 import { useGameSocket, type SocketStatus } from '../lib/useGameSocket';
 
@@ -39,7 +42,8 @@ function Section({ title, children, className = '', tab }: SectionProps) {
   );
 }
 
-type Tab = 'map' | 'sheet' | 'dice' | 'log' | 'party';
+/** 'combat' shares the second phone tab with the sheet (see MobileSwitch). */
+type Tab = 'map' | 'sheet' | 'combat' | 'dice' | 'log' | 'party';
 
 const PLAYER_TOOLS: ToolOption[] = [
   { tool: 'move', label: 'Move' },
@@ -48,7 +52,7 @@ const PLAYER_TOOLS: ToolOption[] = [
 ];
 const GM_TOOLS: ToolOption[] = [...PLAYER_TOOLS, { tool: 'reveal', label: 'Reveal' }, { tool: 'hide', label: 'Hide' }];
 
-const TAB_LABELS: Record<Tab, string> = { map: 'Map', sheet: 'Sheet', dice: 'Dice', log: 'Log', party: 'Party' };
+const TAB_LABELS: Record<Tab, string> = { map: 'Map', sheet: 'Sheet', combat: 'Combat', dice: 'Dice', log: 'Log', party: 'Party' };
 
 function MapEmpty({ isGm }: { isGm: boolean }) {
   return (
@@ -104,6 +108,12 @@ export function Campaign({ user }: { user: User }) {
   }, [tableFollows, sendCamera]);
   const isGm = hello?.you.role === 'gm';
   const selectedToken = scene?.tokens.find((t) => t.id === selectedTokenId) ?? null;
+  const { combat } = state;
+  const activeCombatant = combat?.combatants.find((c) => c.id === combat.activeId);
+  const myTurn = Boolean(activeCombatant && !isGm && activeCombatant.ownerUserId === hello?.you.userId);
+  const selectedCombatant = selectedToken
+    ? combat?.combatants.find((c) => c.tokenId === selectedToken.id || (c.characterId !== null && c.characterId === selectedToken.characterId))
+    : undefined;
 
   // GM shortcut: Delete/Backspace removes the selected token.
   useEffect(() => {
@@ -208,6 +218,11 @@ export function Campaign({ user }: { user: User }) {
               <TokenInspector key={selectedToken.id} token={selectedToken} members={state.members} send={send} />
             </Section>
           )}
+          {isGm && selectedCombatant && (
+            <Section title="In combat">
+              <CombatantCard key={selectedCombatant.id} combatant={selectedCombatant} send={send} />
+            </Section>
+          )}
           {isGm && state.scene && (
             <Section title="Scene settings">
               <SceneSettings key={state.scene.id} scene={state.scene} isLive={state.scene.id === state.activeSceneId} send={send} />
@@ -228,11 +243,15 @@ export function Campaign({ user }: { user: User }) {
 
         <div className="campaign__center">
         <div className="center-switch" role="tablist" aria-label="Main view">
-          <button type="button" role="tab" aria-selected={tab !== 'sheet'} className={tab !== 'sheet' ? 'is-active' : ''} onClick={() => setTab('map')}>
+          <button type="button" role="tab" aria-selected={tab !== 'sheet' && tab !== 'combat'} className={tab !== 'sheet' && tab !== 'combat' ? 'is-active' : ''} onClick={() => setTab('map')}>
             Map
           </button>
           <button type="button" role="tab" aria-selected={tab === 'sheet'} className={tab === 'sheet' ? 'is-active' : ''} onClick={() => setTab('sheet')}>
             {isGm ? 'Characters' : 'Character'}
+          </button>
+          <button type="button" role="tab" aria-selected={tab === 'combat'} className={tab === 'combat' ? 'is-active' : ''} onClick={() => setTab('combat')}>
+            Combat
+            {combat && <span className="center-switch__live" aria-label="in progress" />}
           </button>
         </div>
         <main className="campaign__map" data-tab="map">
@@ -275,6 +294,21 @@ export function Campaign({ user }: { user: User }) {
           ) : (
             <MapEmpty isGm={isGm} />
           )}
+          {combat && combat.combatants.length > 0 && (
+            <div className="map-initiative">
+              <InitiativeStrip
+                combat={combat}
+                onOpen={() => setTab('combat')}
+                action={
+                  isGm || myTurn ? (
+                    <button type="button" className="btn btn--sm btn--primary" onClick={() => send({ type: 'combat:turn', dir: 'next' })}>
+                      {isGm ? (combat.activeId ? 'Next' : 'Start') : 'End turn'}
+                    </button>
+                  ) : undefined
+                }
+              />
+            </div>
+          )}
           {isGm && state.scene && state.scene.id !== state.activeSceneId && (
             <div className="map-banner">
               <span>Preparing: players can't see this scene</span>
@@ -285,6 +319,7 @@ export function Campaign({ user }: { user: User }) {
           )}
         </main>
         <section className="campaign__sheet" data-tab="sheet">
+          <MobileSwitch tab={tab} setTab={setTab} live={Boolean(combat)} />
           {creating ? (
             <CharacterCreator send={send} onDone={() => setCreating(false)} />
           ) : leveling ? (
@@ -300,6 +335,10 @@ export function Campaign({ user }: { user: User }) {
               onLevelUp={(record) => setLevelingId(record.id)}
             />
           )}
+        </section>
+        <section className="campaign__combat" data-tab="combat">
+          <MobileSwitch tab={tab} setTab={setTab} live={Boolean(combat)} />
+          <CombatPanel combat={combat} isGm={isGm} userId={hello.you.userId} characters={state.characters} scene={scene} send={send} />
         </section>
         </div>
 
@@ -319,8 +358,13 @@ export function Campaign({ user }: { user: User }) {
 
       <nav className="tabbar" aria-label="Sections">
         {(['map', 'sheet', 'dice', 'log', 'party'] as const).map((t) => (
-          <button key={t} type="button" className={tab === t ? 'is-active' : ''} onClick={() => setTab(t)}>
-            {t === 'party' && isGm ? 'Manage' : TAB_LABELS[t]}
+          <button
+            key={t}
+            type="button"
+            className={tab === t || (t === 'sheet' && tab === 'combat') ? 'is-active' : ''}
+            onClick={() => setTab(t === 'sheet' && combat && tab !== 'sheet' ? 'combat' : t)}
+          >
+            {t === 'party' && isGm ? 'Manage' : t === 'sheet' && combat ? 'Combat' : TAB_LABELS[t]}
           </button>
         ))}
       </nav>
@@ -330,6 +374,21 @@ export function Campaign({ user }: { user: User }) {
           {toast}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Phones: the sheet and the combat tracker share a tab, with this switch at the top. */
+function MobileSwitch({ tab, setTab, live }: { tab: Tab; setTab: (t: Tab) => void; live: boolean }) {
+  return (
+    <div className="segmented segmented--full mobile-switch" role="tablist" aria-label="Sheet or combat">
+      <button type="button" role="tab" aria-selected={tab === 'sheet'} className={tab === 'sheet' ? 'is-active' : ''} onClick={() => setTab('sheet')}>
+        Sheet
+      </button>
+      <button type="button" role="tab" aria-selected={tab === 'combat'} className={tab === 'combat' ? 'is-active' : ''} onClick={() => setTab('combat')}>
+        Combat
+        {live && <span className="center-switch__live" aria-label="in progress" />}
+      </button>
     </div>
   );
 }
