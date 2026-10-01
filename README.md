@@ -35,6 +35,8 @@ Phases 1–5 are done:
       stat blocks and tap-to-roll attacks, hidden creatures, HP bars and turn markers on the map,
       2024 encounter difficulty
 - [x] Handouts (text and images) shared with everyone or chosen players, shown full-screen on the TV
+- [x] Campaign wiki: GM-written pages (NPCs, places, factions, lore, items, sessions) linked with
+      [[Title]], shared with nobody, everyone or chosen players, with GM-only secret notes
 - [x] Ambient audio: a GM soundboard with music, ambience layers and effects, synced to every screen
 - [x] Area templates (cone, cube, cylinder, emanation, line, sphere) with the 2024 grid coverage rule,
       caught creatures highlighted, spell areas read from the SRD
@@ -139,6 +141,18 @@ block sight; creatures out of sight never reach player devices.
 3. **Show on table** puts a handout full-screen over the map on the table screens (tick *Also pop it
    up on players' screens* to show it to everyone). With no handout selected you can put any image
    up straight away. **Back to map** (in the Handouts view or on the map) takes it down.
+
+### Campaign wiki
+
+1. Open **Wiki** (next to Handouts) and press **New page**: a title, a category (NPC, Location,
+   Faction, Item, Lore, Session, Other), other names (aliases), tags, an optional image and plain
+   text. Type `[[` to link another page, a spell, a monster or a rule; page titles and aliases also
+   link by themselves wherever they appear (handouts, chat, notes, other pages).
+2. Choose who can read it: **GM only**, **Everyone**, or **Some players**. Players only ever receive
+   the pages shared with them, never the **Secret notes**. A dot marks pages that are new or changed.
+3. Each page lists the pages that link to it. A link to a page that doesn't exist yet (`[[Sildar]]`)
+   offers to create it. Titles and aliases are unique within a campaign, so `[[Title]]` always
+   means one page.
 
 ### Ambient audio
 
