@@ -3,6 +3,7 @@ import {
   type CameraRect,
   type CharacterRecord,
   type ClientMessage,
+  type CombatView,
   type ClientRole,
   type DisplayInfo,
   type Hello,
@@ -41,6 +42,8 @@ export interface GameState {
   scenes: SceneSummary[];
   pings: Ping[];
   characters: CharacterRecord[];
+  /** The running encounter, filtered for this client. */
+  combat: CombatView | null;
   /** Latest GM framing (table displays only). */
   camera?: { sceneId: string; rect: CameraRect };
   /** Set for table displays that still need pairing. */
@@ -69,6 +72,7 @@ const initial: GameState = {
   scenes: [],
   pings: [],
   characters: [],
+  combat: null,
 };
 
 let pingSeq = 0;
@@ -101,6 +105,7 @@ function reducer(state: GameState, action: Action): GameState {
             scenes: msg.scenes ?? [],
             pings: [],
             characters: msg.characters,
+            combat: msg.combat,
             camera: undefined,
             unpairedCode: undefined,
           };
@@ -127,6 +132,8 @@ function reducer(state: GameState, action: Action): GameState {
           return { ...state, camera: { sceneId: msg.sceneId, rect: msg.rect } };
         case 'characters':
           return { ...state, characters: msg.characters };
+        case 'combat':
+          return { ...state, combat: msg.combat };
         case 'display:unpaired':
           return { ...initial, status: 'open', unpairedCode: msg.code };
       }

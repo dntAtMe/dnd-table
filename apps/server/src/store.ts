@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { CampaignSummary, CharacterRecord, LogEntry, Role, SceneSummary, Token, User, Visibility } from '@dnd/protocol';
 import type { Character, Grid } from '@dnd/rules';
+import type { Encounter } from './combat';
 import type { DB } from './db';
 import { hashToken, newToken, randomCode } from './security';
 
@@ -454,6 +455,27 @@ export class Store {
 
   deleteCharacter(id: string): void {
     this.db.prepare('DELETE FROM characters WHERE id = ?').run(id);
+  }
+
+  // ---------- encounters ----------
+
+  /** The campaign's running encounter, if any (one per campaign). */
+  getEncounter(campaignId: string): Encounter | undefined {
+    const row = this.db.prepare('SELECT data FROM encounters WHERE campaign_id = ?').get(campaignId) as Row | undefined;
+    return row && (JSON.parse(row.data as string) as Encounter);
+  }
+
+  saveEncounter(campaignId: string, encounter: Encounter): void {
+    this.db
+      .prepare(
+        `INSERT INTO encounters (campaign_id, data) VALUES (?, ?)
+         ON CONFLICT (campaign_id) DO UPDATE SET data = excluded.data, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
+      )
+      .run(campaignId, JSON.stringify(encounter));
+  }
+
+  deleteEncounter(campaignId: string): void {
+    this.db.prepare('DELETE FROM encounters WHERE campaign_id = ?').run(campaignId);
   }
 
   // ---------- log ----------

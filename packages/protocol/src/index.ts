@@ -1,6 +1,6 @@
 // Shapes shared by the server and the web client: REST payloads and WebSocket messages.
 import { z } from 'zod';
-import { ABILITIES, CHARACTER_VERSION, CONDITION_IDS, MAX_EXHAUSTION, SKILL_IDS, type Character, type Grid, type RollResult } from '@dnd/rules';
+import { ABILITIES, CHARACTER_VERSION, CONDITION_IDS, MAX_EXHAUSTION, SKILL_IDS, type Character, type Grid, type HealthStatus, type RollResult } from '@dnd/rules';
 
 export type Role = 'gm' | 'player';
 /** Who is on the other end of a socket. Displays are paired table screens with no user. */
@@ -195,6 +195,68 @@ export interface CharacterRecord {
   updatedAt: string;
 }
 
+// ---------- combat ----------
+
+export type CombatantKind = 'character' | 'monster' | 'npc';
+
+/**
+ * A combatant as one client may see it. Players and table screens never receive hidden combatants
+ * (except their own), and see other creatures' health only as a status, never as numbers.
+ */
+export interface CombatantView {
+  id: string;
+  name: string;
+  kind: CombatantKind;
+  tokenId: string | null;
+  characterId: string | null;
+  /** SRD monster id (GM only). */
+  monsterId?: string;
+  ownerUserId: string | null;
+  initiative: number | null;
+  /** Numbers below are sent to the GM, the owner, and to players for party characters. */
+  initiativeBonus?: number;
+  ac?: number | null;
+  hp?: number | null;
+  hpMax?: number | null;
+  tempHp?: number;
+  /** Null when hit points aren't tracked for this combatant. */
+  status: HealthStatus | null;
+  conditions: string[];
+  hidden: boolean;
+}
+
+/** The running encounter; combatants are in initiative order. */
+export interface CombatView {
+  round: number;
+  /** Whose turn it is; null before the first turn (or, for players, while a hidden creature acts). */
+  activeId: string | null;
+  combatants: CombatantView[];
+}
+
+const ConditionId = z.enum(CONDITION_IDS as [string, ...string[]]);
+const Hp = z.number().int().min(0).max(9999);
+
+export const CombatantSource = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('token'), tokenId: Id }),
+  z.object({ kind: z.literal('character'), characterId: Id }),
+  z.object({
+    kind: z.literal('monster'),
+    monsterId: Id,
+    count: z.number().int().min(1).max(20).optional(),
+    hidden: z.boolean().optional(),
+    /** Also put a token on the scene the GM is looking at. */
+    placeToken: z.boolean().optional(),
+    /** Roll hit points from the hit dice instead of taking the average. */
+    rollHp: z.boolean().optional(),
+  }),
+  z.object({
+    kind: z.literal('custom'),
+    name: z.string().trim().min(1).max(40),
+    initiativeBonus: z.number().int().min(-10).max(30).optional(),
+    hidden: z.boolean().optional(),
+  }),
+]);
+
 // ---------- WebSocket ----------
 
 export const ClientMessage = z.discriminatedUnion('type', [
@@ -203,6 +265,8 @@ export const ClientMessage = z.discriminatedUnion('type', [
     expr: z.string().min(1).max(200),
     label: z.string().trim().max(80).optional(),
     visibility: z.enum(['public', 'gm']),
+    /** An initiative roll for this character: also sets its initiative in the running combat. */
+    initiativeFor: Id.optional(),
   }),
   z.object({
     type: z.literal('chat'),
@@ -265,6 +329,33 @@ export const ClientMessage = z.discriminatedUnion('type', [
   /** Puts the character's token on the scene the sender is looking at. */
   z.object({ type: z.literal('character:token'), characterId: Id }),
 
+  // Combat (GM, except where noted)
+  /** Starts an encounter, optionally with every token on the scene the GM is looking at. */
+  z.object({ type: z.literal('combat:start'), fromScene: z.boolean().optional() }),
+  z.object({ type: z.literal('combat:end') }),
+  z.object({ type: z.literal('combat:add'), source: CombatantSource }),
+  z.object({ type: z.literal('combat:remove'), combatantId: Id }),
+  /** Sets (value) or rolls initiative. Players may do this for their own character. */
+  z.object({ type: z.literal('combat:initiative'), combatantId: Id, value: z.number().int().min(-10).max(60).optional() }),
+  /** Rolls initiative for every non-character combatant that hasn't rolled yet. */
+  z.object({ type: z.literal('combat:roll-initiative') }),
+  /** Players may end their own turn ('next' while it's their turn). */
+  z.object({ type: z.literal('combat:turn'), dir: z.enum(['next', 'prev']) }),
+  /** Damage, healing or temporary HP (owners may adjust their own character). */
+  z.object({ type: z.literal('combat:hp'), combatantId: Id, op: z.enum(['damage', 'heal', 'temp']), amount: Hp }),
+  /** Owners may toggle conditions on their own character. */
+  z.object({ type: z.literal('combat:condition'), combatantId: Id, condition: ConditionId, on: z.boolean() }),
+  z.object({
+    type: z.literal('combat:update'),
+    combatantId: Id,
+    name: z.string().trim().min(1).max(40).optional(),
+    ac: z.number().int().min(0).max(50).nullable().optional(),
+    hp: Hp.optional(),
+    hpMax: Hp.min(1).nullable().optional(),
+    initiativeBonus: z.number().int().min(-10).max(30).optional(),
+    hidden: z.boolean().optional(),
+  }),
+
   // Pointers
   z.object({ type: z.literal('ping'), sceneId: Id, x: z.number().finite(), y: z.number().finite() }),
   /** GM's view, relayed to table screens so they show what the GM frames. */
@@ -326,6 +417,8 @@ export interface Hello {
   scenes?: SceneSummary[];
   /** Party characters (not sent to table screens). Other players' private notes are removed. */
   characters: CharacterRecord[];
+  /** The running encounter, filtered for this client. */
+  combat: CombatView | null;
 }
 
 export type ServerMessage =
@@ -339,6 +432,7 @@ export type ServerMessage =
   | { type: 'ping'; sceneId: string; x: number; y: number; name: string; role: ClientRole }
   | { type: 'camera'; sceneId: string; rect: CameraRect }
   | { type: 'characters'; characters: CharacterRecord[] }
+  | { type: 'combat'; combat: CombatView | null }
   /** Sent to a table display that is not (or no longer) paired with a campaign. */
   | { type: 'display:unpaired'; code: string };
 

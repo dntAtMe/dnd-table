@@ -27,6 +27,7 @@ import {
   type User,
 } from '@dnd/protocol';
 import type { WebSocket } from 'ws';
+import { CombatTracker, isCombatMessage } from './combat';
 import { GameError, applyGridPatch, clampToGrid, fogMask, sceneView, summary } from './scenes';
 import type { Display, SceneRecord, Store } from './store';
 
@@ -65,8 +66,18 @@ export class Hub {
   /** Last GM framing per campaign, so a table screen that (re)connects shows the same view. */
   private readonly cameras = new Map<string, { sceneId: string; rect: CameraRect }>();
   private readonly heartbeat: NodeJS.Timeout;
+  private readonly combat: CombatTracker<Conn>;
 
   constructor(private readonly store: Store) {
+    this.combat = new CombatTracker<Conn>(store, {
+      broadcast: (campaignId, build) => {
+        for (const conn of this.rooms.get(campaignId) ?? []) send(conn.socket, build(conn));
+      },
+      sceneIdFor: (conn) => this.sceneIdFor(conn),
+      sceneChanged: (campaignId, sceneId) => this.sceneChanged(campaignId, sceneId),
+      saveCharacter: (conn, id, data, before) => this.saveCharacter(conn, id, data, before),
+      publish: (conn, entry) => this.publish(conn, entry),
+    });
     // Phones drop off Wi-Fi without closing sockets; ping so presence stays honest.
     this.heartbeat = setInterval(() => this.sweep(), HEARTBEAT_MS);
     this.heartbeat.unref();
@@ -162,6 +173,7 @@ export class Hub {
       scene: this.viewFor(conn),
       ...(isGm && { scenes: this.store.scenes(conn.campaignId).map(summary) }),
       characters: this.charactersFor(conn),
+      combat: this.combat.viewFor(conn),
     });
   }
 
@@ -180,6 +192,7 @@ export class Hub {
     for (const conn of this.rooms.get(campaignId) ?? []) {
       if (conn.role !== 'display') send(conn.socket, { type: 'characters', characters: this.charactersFor(conn, all) });
     }
+    this.combat.charactersChanged(campaignId);
   }
 
   private characterOf(conn: Conn, characterId: string, edit = true) {
@@ -508,11 +521,13 @@ export class Hub {
   }
 
   private dispatch(conn: Conn & { user: User }, msg: ClientMessage): void {
+    if (isCombatMessage(msg)) return this.combat.handle(conn, msg);
     switch (msg.type) {
       case 'roll': {
         const roll = rollDice(msg.expr);
         const label = msg.label || undefined;
         this.publish(conn, this.store.addLog(conn.campaignId, conn.user.id, 'roll', msg.visibility, { label, roll }));
+        if (msg.initiativeFor) this.combat.rolledInitiative(conn, msg.initiativeFor, roll.total);
         break;
       }
       case 'chat':
