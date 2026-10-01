@@ -19,10 +19,12 @@ const FILES = [
   'Backgrounds',
   'Classes',
   'Conditions',
+  'Damage-Types',
   'Equipment',
   'Feats',
   'Features',
   'Levels',
+  'Monsters',
   'Proficiencies',
   'Skills',
   'Species',
@@ -414,6 +416,182 @@ const spells = raw.Spells.map((s) =>
 ).sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
 assert(spells.length > 300, `only ${spells.length} spells`);
 
+// Monsters
+const ABILITY_KEYS = { str: 'strength', dex: 'dexterity', con: 'constitution', int: 'intelligence', wis: 'wisdom', cha: 'charisma' };
+const feet = (v) => {
+  const n = Number(/^(\d+) ft\.$/.exec(String(v))?.[1]);
+  assert(Number.isFinite(n), `unexpected distance "${v}"`);
+  return n;
+};
+const titleCase = (s) => s.replace(/\b[a-z]/g, (c) => c.toUpperCase());
+
+/** "2d6+3" / "2d6 + 3" / "1d4 – 1" → "2d6 + 3", the form the dice roller and sheet use. */
+const dice = (s) =>
+  s
+    .replace(/[–−]/g, '-')
+    .replace(/\s+/g, '')
+    .replace(/([+-])/g, ' $1 ');
+
+// "12 (2d6 + 5) Slashing damage" or a flat "1 Piercing damage".
+const DAMAGE_RE = String.raw`(\d+)(?: \((\d+d\d+(?: [+\-–−] \d+)?)\))? ([A-Z][a-z]+) damage`;
+
+function damageFrom(match) {
+  const [, average, roll, type] = match;
+  const damageType = type.toLowerCase();
+  assert(DAMAGE_TYPE_SET.has(damageType), `unknown damage type ${type}`);
+  return { average: Number(average), dice: roll ? dice(roll) : average, type: damageType };
+}
+
+/** The damage listed at the start of a clause, joined by "plus" ("13 (1d10 + 8) Slashing damage plus 5 (2d4) Fire damage"). */
+function damageChain(text) {
+  const out = [];
+  const re = new RegExp(String.raw`^\s*(?:plus )?${DAMAGE_RE}`);
+  let rest = text;
+  for (let m = re.exec(rest); m; m = re.exec(rest)) {
+    out.push(damageFrom(m));
+    rest = rest.slice(m[0].length);
+  }
+  return out;
+}
+
+function usageText(u) {
+  if (!u) return undefined;
+  if (u.type === 'recharge on roll') {
+    assert(u.dice === '1d6', `unexpected recharge die ${u.dice}`);
+    return u.min_value === 6 ? 'Recharge 6' : `Recharge ${u.min_value}–6`;
+  }
+  if (u.type === 'per day') return `${u.times}/Day${u.times_in_lair ? ` (${u.times_in_lair}/Day in Lair)` : ''}`;
+  if (u.type === 'recharge after rest') return `Recharges after a ${u.rest_types.map(titleCase).join(' or ')} Rest`;
+  throw new Error(`SRD import check failed: unknown usage ${u.type}`);
+}
+
+/** Spellcasting entries end with "…the following spells:"; the list itself only exists as structured data. */
+function spellList(sc) {
+  const groups = new Map();
+  for (const sp of sc.spells) {
+    const u = sp.usage;
+    const key = !u ? '' : u.type === 'at will' ? 'At will' : u.type === 'per day' ? `${u.times}/Day each` : null;
+    assert(key !== null, `unknown spell usage ${u?.type}`);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(sp.name);
+  }
+  return [...groups].map(([k, names]) => (k ? `${k}: ${names.join(', ')}` : names.join(', '))).join('\n');
+}
+
+function monsterAction(a) {
+  let description = clean(a.desc);
+  if (a.spellcasting && description.endsWith(':')) description += `\n${spellList(a.spellcasting)}`;
+  let attack;
+  if (a.attack_bonus !== undefined) {
+    // Distances come as "5 ft.", "5 ft" or "5 feet"; normalised to "5 ft.".
+    const head = /^(Melee or Ranged|Melee|Ranged) Attack Roll: ([+-]\d+)[^,]*, (?:reach (\d+) (?:ft\.?|feet))?(?: or )?(?:range (\d+(?:\/\d+)?) (?:ft\.?|feet))?/.exec(description);
+    assert(head && Number(head[2]) === a.attack_bonus, `can't read the attack line of ${a.name}`);
+    const kind = head[1].toLowerCase();
+    assert((head[3] !== undefined) === kind.startsWith('melee') && (head[4] !== undefined) === kind.endsWith('ranged'), `reach/range of ${a.name}`);
+    const hit = description.split('Hit: ')[1] ?? '';
+    const damage = damageChain(hit);
+    const riders = [...hit.matchAll(new RegExp(String.raw`, (plus|or) ${DAMAGE_RE} (if [^.,]+)`, 'g'))].map((m) =>
+      ({ ...damageFrom(m.slice(1)), note: `${m[1] === 'or' ? 'instead ' : ''}${m[5]}` }),
+    );
+    attack = compact({
+      kind,
+      bonus: a.attack_bonus,
+      reach: head[3] && `${head[3]} ft.`,
+      range: head[4] && `${head[4]} ft.`,
+      damage,
+      riders: riders.length ? riders : undefined,
+    });
+  }
+  let save;
+  if (a.dc && !attack && !a.spellcasting) {
+    const failure = description.split('Failure: ')[1];
+    const damage = failure ? damageChain(failure) : [];
+    save = compact({
+      ability: a.dc.dc_type.index,
+      dc: a.dc.dc_value,
+      damage: damage.length ? damage : undefined,
+      half: /Success: Half damage/.test(description) || undefined,
+    });
+  }
+  return compact({
+    name: a.name,
+    description,
+    usage: usageText(a.usage),
+    attack,
+    save,
+    spells: a.spellcasting?.spells.map((sp) => sp.index),
+  });
+}
+
+const DAMAGE_TYPE_SET = new Set(raw['Damage-Types'].map((d) => d.index));
+const SIZES = new Set(['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan', 'Medium or Small']);
+
+const monsters = raw.Monsters.map((m) => {
+  const bonuses = (prefix, key) =>
+    Object.fromEntries(
+      m.proficiencies.filter((p) => p.proficiency.index.startsWith(prefix)).map((p) => [key(p.proficiency.index.slice(prefix.length)), p.value]),
+    );
+  const skills = bonuses('skill-', camel);
+  for (const s of Object.keys(skills)) assert(skillIndexes.has(s.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)), `${m.index}: unknown skill ${s}`);
+  assert(m.proficiencies.every((p) => /^(skill|saving-throw)-/.test(p.proficiency.index)), `${m.index}: unexpected proficiency`);
+  assert(m.armor_class.length === 1, `${m.index}: several armor classes`);
+  const size = m.size.replace(' or small', ' or Small');
+  assert(SIZES.has(size), `${m.index}: unknown size ${m.size}`);
+  const { hover, ...speeds } = m.speed;
+  const { passive_perception: passivePerception, ...senses } = m.senses;
+  const list = (key) => (m[key] ?? []).map(monsterAction);
+  return compact({
+    id: m.index,
+    name: m.name,
+    size,
+    type: m.type,
+    alignment: m.alignment,
+    ac: m.armor_class[0].value,
+    acNote: m.armor_class[0].armor?.map((x) => x.name).join(', '),
+    hp: m.hit_points,
+    hpFormula: dice(m.hit_points_roll),
+    speed: Object.fromEntries(Object.entries(speeds).map(([k, v]) => [k, feet(v)])),
+    hover: hover || undefined,
+    scores: Object.fromEntries(Object.entries(ABILITY_KEYS).map(([a, key]) => [a, m[key]])),
+    saves: bonuses('saving-throw-', (a) => a),
+    skills,
+    vulnerabilities: m.damage_vulnerabilities.map(clean),
+    resistances: m.damage_resistances.map(clean),
+    immunities: m.damage_immunities.map(clean),
+    conditionImmunities: m.condition_immunities.map((c) => c.index),
+    senses: Object.fromEntries(
+      Object.entries(senses).map(([k, v]) => {
+        assert(/^\d+ ft\.( \(.+\))?$/.test(v), `${m.index}: unexpected sense ${v}`);
+        return [k, v];
+      }),
+    ),
+    passivePerception,
+    languages: clean(m.languages),
+    cr: m.challenge_rating,
+    xp: m.xp,
+    xpInLair: m.xp_in_lair,
+    profBonus: m.proficiency_bonus,
+    gear: clean(m.gear),
+    traits: list('special_abilities'),
+    actions: list('actions'),
+    bonusActions: list('bonus_actions'),
+    reactions: list('reactions'),
+    legendaryActions: list('legendary_actions'),
+  });
+}).sort((a, b) => a.name.localeCompare(b.name));
+assert(monsters.length >= 300, `only ${monsters.length} monsters`);
+for (const m of monsters) {
+  assert(m.hp > 0 && m.ac > 0 && m.xp >= 0 && m.profBonus >= 2, `${m.id}: bad core stats`);
+  assert(m.speed.walk !== undefined, `${m.id}: no walking speed`);
+  for (const a of [...m.actions, ...m.bonusActions, ...m.reactions, ...m.legendaryActions]) {
+    if (a.attack) assert(a.attack.damage.length > 0 || !/Hit: \d/.test(a.description), `${m.id} ${a.name}: unparsed hit damage`);
+  }
+}
+const attacks = monsters.flatMap((m) => [...m.actions, ...m.bonusActions, ...m.reactions, ...m.legendaryActions]).filter((a) => a.attack);
+assert(attacks.length >= 400 && attacks.filter((a) => a.attack.damage.length).length >= 400, 'too few parsed attacks');
+const goblin = monsters.find((m) => m.id === 'goblin-warrior');
+assert(goblin?.actions[0]?.attack?.bonus === 4 && goblin.actions[0].attack.damage[0].dice === '1d6 + 2', 'goblin warrior scimitar');
+
 // Reference text
 const rules = {
   conditions: Object.fromEntries(raw.Conditions.map((c) => [c.index, { name: c.name, description: clean(c.description ?? c.desc) }])),
@@ -436,6 +614,7 @@ const written = [
   writeJson('armor', armor),
   writeJson('gear', gear),
   writeJson('spells', spells),
+  writeJson('monsters', monsters),
   writeJson('rules', rules),
 ];
 writeJson('manifest', {

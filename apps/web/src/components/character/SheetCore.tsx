@@ -89,7 +89,7 @@ export function Vitals({ a }: { a: CharacterActions }) {
           <span className="stat-label">AC</span>
           <strong>{derived.ac}</strong>
         </div>
-        <button type="button" className="stat stat--roll" onClick={() => a.rollD20('check', 'Initiative', derived.initiative, 'dex')}>
+        <button type="button" className="stat stat--roll" onClick={() => a.rollD20('check', 'Initiative', derived.initiative, 'dex', { initiative: true })}>
           <span className="stat-label">Initiative</span>
           <strong>{signed(derived.initiative)}</strong>
         </button>

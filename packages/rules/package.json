@@ -4,7 +4,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./spells": "./src/srd/spells.ts"
+    "./spells": "./src/srd/spells.ts",
+    "./monsters": "./src/srd/monsters.ts"
   },
   "scripts": {
     "test": "vitest run",

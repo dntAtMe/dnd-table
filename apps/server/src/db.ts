@@ -107,6 +107,13 @@ const MIGRATIONS = [
   `
   ALTER TABLE scenes ADD COLUMN map TEXT NOT NULL DEFAULT '';
   `,
+  `
+  CREATE TABLE encounters (
+    campaign_id TEXT PRIMARY KEY REFERENCES campaigns(id) ON DELETE CASCADE,
+    data TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT ${NOW}
+  );
+  `,
 ];
 
 export function openDb(file: string): DB {

@@ -31,7 +31,9 @@ Phases 1–3 are done:
       apply automatically; HP, death saves, spell slots, class resources, rests, inventory, SRD spells
 - [x] Level-up: HP, subclass, ASI/feats, Epic Boons, Expertise, Weapon Masteries, Fighting Style
 - [x] Characters place linked tokens on the map
-- [ ] Phase 4: combat (initiative, HP and conditions, monsters, encounter builder)
+- [x] Phase 4: combat: initiative tracker, HP and conditions synced with sheets, SRD monsters with
+      stat blocks and tap-to-roll attacks, hidden creatures, HP bars and turn markers on the map,
+      2024 encounter difficulty
 - [ ] Phase 5: handouts, scenes, AoE templates, lighting, audio
 
 ## Running locally
@@ -75,6 +77,19 @@ In dev, Vite (port 5173) serves the client and proxies `/api`, `/ws` and `/files
 Map controls: drag to pan, scroll or pinch to zoom, double-click to ping. **Measure** shows the
 movement cost through difficult terrain ("30 ft (40 ft move)") and turns red when a wall is in the way.
 
+### Running combat
+
+1. Open **Combat** (next to Map; on phones it shares the Sheet tab) and start, either with every
+   token on the current map or empty. Add party members, map tokens or SRD monsters (searchable,
+   filtered by CR); monsters can drop their own tokens on the map, optionally hidden.
+2. **Roll for creatures** rolls initiative for monsters as GM-only rolls. Players roll from their
+   sheet's Initiative button or the tracker, or type in a physical roll.
+3. **Next turn** walks the order and announces each round. Players can end their own turn.
+4. Expand a row (or select its token) to apply damage, healing and temporary HP, or toggle
+   conditions. Characters' HP and conditions are their sheet's, so both stay in sync.
+5. Players and table screens see the order and whose turn it is, but never hidden creatures, and
+   only Healthy / Bloodied / Down for creatures that aren't theirs.
+
 ### Single-port production mode
 
 ```bash
@@ -116,7 +131,7 @@ pnpm typecheck
 
 ## Content (SRD 5.2)
 
-All rules content (classes, subclasses, species, backgrounds, feats, equipment, 339 spells) comes
+All rules content (classes, subclasses, species, backgrounds, feats, equipment, 339 spells, 341 monsters) comes
 from the D&D System Reference Document 5.2, via the [5e-database](https://github.com/5e-bits/5e-database)
 project's 2024 dataset. `scripts/import-srd.mjs` fetches it at a **pinned commit** and writes
 normalised JSON to `packages/rules/src/srd/data`, so the data is reproducible and reviewable:

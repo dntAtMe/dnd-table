@@ -1,6 +1,8 @@
 import type { LogEntry, NewDisplay } from '@dnd/protocol';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RollView } from '../components/RollView';
+import { InitiativeStrip } from '../components/combat/InitiativeStrip';
+import { tokenDecorations } from '../components/combat/TokenDecor';
 import { MapView } from '../components/map/MapView';
 import { api, errorMessage } from '../lib/api';
 import { useGameSocket } from '../lib/useGameSocket';
@@ -70,6 +72,7 @@ export function Table() {
   const { state } = useGameSocket(token ? `display=${encodeURIComponent(token)}` : null);
   const [spotlight, setSpotlight] = useState<Extract<LogEntry, { kind: 'roll' }>>();
   const lastSeen = useRef<number | null>(null);
+  const decorations = useMemo(() => tokenDecorations(state.combat, state.scene?.tokens ?? [], { isGm: false }), [state.combat, state.scene?.tokens]);
 
   // The server forgot this display (e.g. a fresh database): get a new identity.
   const failed = Boolean(state.failure);
@@ -165,7 +168,7 @@ export function Table() {
 
       <main className="table__stage">
         {state.scene ? (
-          <MapView scene={state.scene} isGm={false} interactive={false} camera={state.camera?.rect} pings={state.pings} />
+          <MapView scene={state.scene} isGm={false} interactive={false} camera={state.camera?.rect} pings={state.pings} decorations={decorations} />
         ) : (
           !spotlight && (
             <div className="table__idle">
@@ -176,6 +179,11 @@ export function Table() {
               <p>Waiting for the GM to show a map.</p>
             </div>
           )
+        )}
+        {state.combat && state.combat.combatants.length > 0 && (
+          <div className="table__initiative">
+            <InitiativeStrip combat={state.combat} size="lg" max={7} />
+          </div>
         )}
         {spotlight && (
           <div className={`table__spotlight${state.scene ? ' table__spotlight--over-map' : ''}`}>

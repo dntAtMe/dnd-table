@@ -747,3 +747,238 @@ describe('characters', () => {
     expect(renamed.scene!.tokens[0]!.characterId).toBe(id);
   });
 });
+
+describe('combat', () => {
+  /** GM and Ana (with a character and its token on the live scene), plus Bram, a second player. */
+  async function encounterTable() {
+    const { gm, player, campaignId } = await campaignWithPlayer();
+    const gmSock = await gm.socket(`campaign=${campaignId}`);
+    const hello = await gmSock.until('hello');
+    expect(hello.combat).toBeNull();
+    const other = await Client.register('bram', 'Bram');
+    await player.call('POST', '/api/campaigns/join', { inviteCode: hello.campaign.inviteCode });
+    await other.call('POST', '/api/campaigns/join', { inviteCode: hello.campaign.inviteCode });
+    const playerSock = await player.socket(`campaign=${campaignId}`);
+    const otherSock = await other.socket(`campaign=${campaignId}`);
+    await playerSock.until('hello');
+    await otherSock.until('hello');
+
+    playerSock.send({ type: 'character:create', data: fighter('Ana') });
+    const characterId = (await gmSock.until('characters')).characters[0]!.id;
+    gmSock.send({ type: 'scene:create', name: 'Road', fileId: null, width: 500, height: 500, grid: { size: 50 } });
+    const sceneId = (await gmSock.until('scenes')).scenes[0]!.id;
+    gmSock.send({ type: 'scene:activate', sceneId });
+    await playerSock.until('scene', (m) => m.scene !== null);
+    playerSock.send({ type: 'character:token', characterId });
+    await gmSock.until('scene', (m) => m.scene?.tokens.length === 1);
+    return { gm, gmSock, playerSock, otherSock, campaignId, characterId, sceneId };
+  }
+
+  const names = (m: Extract<ServerMessage, { type: 'combat' }>) => m.combat?.combatants.map((c) => c.name) ?? [];
+
+  it('runs initiative order, ties, turns and rounds', async () => {
+    const { gmSock, playerSock, sceneId } = await encounterTable();
+    gmSock.send({ type: 'token:create', sceneId, name: 'Wolf', color: '#7f8c8d', col: 1, row: 1 });
+    await gmSock.until('scene', (m) => m.scene?.tokens.length === 2);
+
+    gmSock.send({ type: 'combat:start', fromScene: true });
+    expect((await playerSock.until('log')).entry).toMatchObject({ kind: 'chat', text: 'Combat begins. Roll initiative!' });
+    const started = await gmSock.until('combat');
+    expect(started.combat).toMatchObject({ round: 1, activeId: null });
+    expect(started.combat!.combatants.map((c) => [c.name, c.kind])).toEqual([
+      ['Ana', 'character'],
+      ['Wolf', 'npc'],
+    ]);
+
+    // Two goblins with tokens on the GM's scene, numbered.
+    gmSock.send({ type: 'combat:add', source: { kind: 'monster', monsterId: 'goblin-warrior', count: 2, placeToken: true } });
+    const placed = await gmSock.until('scene', (m) => m.scene?.tokens.length === 4);
+    expect(placed.scene!.tokens.filter((t) => t.name.startsWith('Goblin')).map((t) => t.name)).toEqual(['Goblin Warrior 1', 'Goblin Warrior 2']);
+    const added = await gmSock.until('combat', (m) => m.combat?.combatants.length === 4);
+    const goblin = added.combat!.combatants.find((c) => c.name === 'Goblin Warrior 1')!;
+    expect(goblin).toMatchObject({ kind: 'monster', monsterId: 'goblin-warrior', ac: 15, hp: 10, hpMax: 10, initiativeBonus: 2 });
+    expect(placed.scene!.tokens.find((t) => t.id === goblin.tokenId)).toBeDefined();
+
+    // The server rolls for every creature without initiative, hidden from players.
+    gmSock.send({ type: 'combat:roll-initiative' });
+    const rolled = await gmSock.until('combat', (m) => m.combat!.combatants.filter((c) => c.initiative !== null).length === 3);
+    for (const c of rolled.combat!.combatants.filter((x) => x.kind !== 'character')) {
+      expect(c.initiative).toBeGreaterThanOrEqual(c.initiativeBonus! + 1);
+      expect(c.initiative).toBeLessThanOrEqual(c.initiativeBonus! + 20);
+    }
+    gmSock.send({ type: 'combat:roll-initiative' });
+    expect(await gmSock.until('error')).toMatchObject({ message: 'Every creature has rolled initiative' });
+
+    // Ties: goblins (+2, DEX 15) beat Ana (+1); between goblins, join order decides.
+    const byName = (n: string) => rolled.combat!.combatants.find((c) => c.name === n)!.id;
+    gmSock.send({ type: 'combat:initiative', combatantId: byName('Wolf'), value: 15 });
+    gmSock.send({ type: 'combat:initiative', combatantId: byName('Goblin Warrior 2'), value: 12 });
+    gmSock.send({ type: 'combat:initiative', combatantId: byName('Goblin Warrior 1'), value: 12 });
+    playerSock.send({ type: 'combat:initiative', combatantId: byName('Wolf'), value: 30 });
+    expect(await playerSock.until('error')).toMatchObject({ message: "That's not your character" });
+    playerSock.send({ type: 'combat:initiative', combatantId: byName('Ana'), value: 12 });
+    expect((await gmSock.until('log', (m) => m.entry.kind === 'chat')).entry).toMatchObject({ text: 'Ana has initiative 12.' });
+    const ordered = await playerSock.until('combat', (m) => m.combat!.combatants.every((c) => c.initiative !== null));
+    expect(names(ordered)).toEqual(['Wolf', 'Goblin Warrior 1', 'Goblin Warrior 2', 'Ana']);
+
+    // Turns: the first "next" starts round 1; players may only end their own turn.
+    gmSock.send({ type: 'combat:turn', dir: 'next' });
+    expect((await playerSock.until('log')).entry).toMatchObject({ text: 'Round 1' });
+    expect((await playerSock.until('combat')).combat!.activeId).toBe(byName('Wolf'));
+    playerSock.send({ type: 'combat:turn', dir: 'next' });
+    expect(await playerSock.until('error')).toMatchObject({ message: "It's not your turn" });
+    gmSock.send({ type: 'combat:turn', dir: 'next' });
+    gmSock.send({ type: 'combat:turn', dir: 'next' });
+    gmSock.send({ type: 'combat:turn', dir: 'next' });
+    await playerSock.until('combat', (m) => m.combat!.activeId === byName('Ana'));
+    playerSock.send({ type: 'combat:turn', dir: 'next' });
+    await gmSock.until('log', (m) => m.entry.kind === 'chat' && m.entry.text === 'Round 2');
+    expect((await gmSock.until('combat')).combat).toMatchObject({ round: 2, activeId: byName('Wolf') });
+    playerSock.send({ type: 'combat:turn', dir: 'prev' });
+    expect(await playerSock.until('error')).toMatchObject({ message: "It's not your turn" });
+    gmSock.send({ type: 'combat:turn', dir: 'prev' });
+    expect((await gmSock.until('combat')).combat).toMatchObject({ round: 1, activeId: byName('Ana') });
+
+    // Removing the active combatant passes the turn on.
+    gmSock.send({ type: 'combat:remove', combatantId: byName('Ana') });
+    const removed = await gmSock.until('combat');
+    expect(names(removed)).toEqual(['Wolf', 'Goblin Warrior 1', 'Goblin Warrior 2']);
+    expect(removed.combat).toMatchObject({ round: 2, activeId: byName('Wolf') });
+  });
+
+  it('keeps character HP in sync and shows players only what they may see', async () => {
+    const { gm, gmSock, playerSock, otherSock, campaignId, characterId } = await encounterTable();
+    gmSock.send({ type: 'combat:start' });
+    gmSock.send({ type: 'combat:add', source: { kind: 'character', characterId } });
+    gmSock.send({ type: 'combat:add', source: { kind: 'monster', monsterId: 'ogre' } });
+    gmSock.send({ type: 'combat:add', source: { kind: 'monster', monsterId: 'goblin-warrior', hidden: true, placeToken: true } });
+    const gmView = (await gmSock.until('combat', (m) => m.combat?.combatants.length === 3)).combat!;
+    const id = (n: string) => gmView.combatants.find((c) => c.name === n)!.id;
+    expect(gmView.combatants.find((c) => c.name === 'Ana')).toMatchObject({ characterId, hp: 28, hpMax: 28, ac: 19, status: 'healthy' });
+    // The character's existing token is linked.
+    expect(gmView.combatants.find((c) => c.name === 'Ana')!.tokenId).not.toBeNull();
+
+    // Players: no hidden goblin, no monster numbers; party characters keep theirs.
+    let seen = (await otherSock.until('combat', (m) => m.combat?.combatants.length === 2)).combat!;
+    expect(seen.combatants.map((c) => c.name).sort()).toEqual(['Ana', 'Ogre']);
+    const ogre = seen.combatants.find((c) => c.name === 'Ogre')!;
+    expect(ogre).toEqual({
+      id: id('Ogre'),
+      name: 'Ogre',
+      kind: 'monster',
+      tokenId: null,
+      characterId: null,
+      ownerUserId: null,
+      initiative: null,
+      status: 'healthy',
+      conditions: [],
+      hidden: false,
+    });
+    expect(seen.combatants.find((c) => c.name === 'Ana')).toMatchObject({ hp: 28, ac: 19 });
+    // The hidden goblin's token stays off the players' map too.
+    const playerScene = await playerSock.until('scene');
+    expect(playerScene.scene!.tokens.map((t) => t.name)).toEqual(['Ana']);
+
+    // Bloodied shows as a status, never a number.
+    gmSock.send({ type: 'combat:hp', combatantId: id('Ogre'), op: 'damage', amount: 40 });
+    expect((await gmSock.until('combat', (m) => m.combat!.combatants.some((c) => c.hp === 28 && c.name === 'Ogre'))).combat).toBeTruthy();
+    seen = (await otherSock.until('combat', (m) => m.combat!.combatants.some((c) => c.status === 'bloodied'))).combat!;
+    expect(seen.combatants.find((c) => c.name === 'Ogre')).not.toHaveProperty('hp');
+
+    // Damage to a character goes through the sheet, temp HP first.
+    gmSock.send({ type: 'combat:hp', combatantId: id('Ana'), op: 'temp', amount: 5 });
+    gmSock.send({ type: 'combat:hp', combatantId: id('Ana'), op: 'damage', amount: 8 });
+    const sheet = await playerSock.until('characters', (m) => m.characters[0]!.data.state.hp === 25);
+    expect(sheet.characters[0]!.data.state.tempHp).toBe(0);
+    seen = (await playerSock.until('combat', (m) => m.combat!.combatants.some((c) => c.name === 'Ana' && c.hp === 25))).combat!;
+    // ...and sheet edits show up in the tracker.
+    playerSock.send({ type: 'character:state', characterId, patch: { hp: 3 } });
+    seen = (await gmSock.until('combat', (m) => m.combat!.combatants.some((c) => c.name === 'Ana' && c.hp === 3))).combat!;
+    expect(seen.combatants.find((c) => c.name === 'Ana')!.status).toBe('bloodied');
+
+    // Owners may change their own character; nobody else's.
+    playerSock.send({ type: 'combat:condition', combatantId: id('Ana'), condition: 'prone', on: true });
+    await gmSock.until('characters', (m) => m.characters[0]!.data.state.conditions.includes('prone'));
+    otherSock.send({ type: 'combat:hp', combatantId: id('Ana'), op: 'heal', amount: 5 });
+    expect(await otherSock.until('error')).toMatchObject({ message: "That's not your character" });
+    playerSock.send({ type: 'combat:hp', combatantId: id('Ogre'), op: 'damage', amount: 5 });
+    expect(await playerSock.until('error')).toMatchObject({ message: "That's not your character" });
+    gmSock.send({ type: 'combat:condition', combatantId: id('Ogre'), condition: 'grappled', on: true });
+    seen = (await otherSock.until('combat', (m) => m.combat!.combatants.some((c) => c.conditions.includes('grappled')))).combat!;
+
+    // An initiative roll from the sheet fills in the tracker.
+    playerSock.send({ type: 'roll', expr: '1d20 + 1', label: 'Ana: Initiative', visibility: 'public', initiativeFor: characterId });
+    const { entry } = await gmSock.until('log', (m) => m.entry.kind === 'roll');
+    if (entry.kind !== 'roll') throw new Error('expected roll');
+    seen = (await gmSock.until('combat', (m) => m.combat!.combatants.some((c) => c.name === 'Ana' && c.initiative !== null))).combat!;
+    expect(seen.combatants.find((c) => c.name === 'Ana')!.initiative).toBe(entry.roll.total);
+
+    // Hidden creatures act without telling players whose turn it is.
+    gmSock.send({ type: 'combat:initiative', combatantId: id('Goblin Warrior'), value: 25 });
+    gmSock.send({ type: 'combat:turn', dir: 'next' });
+    expect((await gmSock.until('combat', (m) => m.combat!.activeId !== null)).combat!.activeId).toBe(id('Goblin Warrior'));
+    // The round is announced just before the turn update goes out.
+    await otherSock.until('log', (m) => m.entry.kind === 'chat' && m.entry.text === 'Round 1');
+    const duringHidden = await otherSock.until('combat');
+    expect(duringHidden.combat!.combatants).toHaveLength(2);
+    expect(duringHidden.combat!.activeId).toBeNull();
+
+    // Table screens get public information only.
+    const { data: display } = await new Client().call('POST', '/api/displays');
+    const tv = await Sock.open(`ws://${base}/ws?display=${display.token}`, '');
+    await tv.until('display:unpaired');
+    await gm.call('POST', `/api/campaigns/${campaignId}/displays`, { code: display.code });
+    const tvCombat = (await tv.until('hello')).combat!;
+    expect(tvCombat.combatants.map((c) => c.name).sort()).toEqual(['Ana', 'Ogre']);
+    for (const c of tvCombat.combatants) expect(c).not.toHaveProperty('hp');
+    expect(tvCombat.combatants.find((c) => c.name === 'Ana')!.status).toBe('bloodied');
+
+    // Revealing the goblin reveals its token as well.
+    gmSock.send({ type: 'combat:update', combatantId: id('Goblin Warrior'), hidden: false });
+    expect((await otherSock.until('scene', (m) => m.scene!.tokens.length === 2)).scene!.tokens.map((t) => t.name)).toContain('Goblin Warrior');
+    seen = (await otherSock.until('combat', (m) => m.combat!.combatants.length === 3)).combat!;
+    expect(seen.activeId).toBe(id('Goblin Warrior'));
+    tv.close();
+  });
+
+  it('checks permissions, persists the encounter and ends it', async () => {
+    const { gm, gmSock, playerSock, campaignId } = await encounterTable();
+    playerSock.send({ type: 'combat:start' });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'Only the GM can do that' });
+    gmSock.send({ type: 'combat:turn', dir: 'next' });
+    expect(await gmSock.until('error')).toMatchObject({ message: 'No combat is running' });
+
+    gmSock.send({ type: 'combat:start' });
+    await gmSock.until('combat', (m) => m.combat !== null);
+    gmSock.send({ type: 'combat:start' });
+    expect(await gmSock.until('error')).toMatchObject({ message: 'Combat is already running' });
+    playerSock.send({ type: 'combat:add', source: { kind: 'monster', monsterId: 'wolf' } });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'Only the GM can do that' });
+    gmSock.send({ type: 'combat:add', source: { kind: 'monster', monsterId: 'tarrasque-jr' } });
+    expect(await gmSock.until('error')).toMatchObject({ message: 'Unknown monster' });
+    gmSock.send({ type: 'combat:add', source: { kind: 'custom', name: 'Lair Action', initiativeBonus: 0 } });
+    gmSock.send({ type: 'combat:add', source: { kind: 'monster', monsterId: 'wolf', rollHp: true } });
+    const view = (await gmSock.until('combat', (m) => m.combat!.combatants.length === 2)).combat!;
+    const wolf = view.combatants.find((c) => c.name === 'Wolf')!;
+    expect(wolf.hp).toBeGreaterThanOrEqual(2);
+    expect(wolf.hp).toBe(wolf.hpMax);
+    const lair = view.combatants.find((c) => c.name === 'Lair Action')!;
+    gmSock.send({ type: 'combat:hp', combatantId: lair.id, op: 'damage', amount: 3 });
+    expect(await gmSock.until('error')).toMatchObject({ message: 'Set hit points for Lair Action first' });
+    playerSock.send({ type: 'combat:remove', combatantId: wolf.id });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'Only the GM can do that' });
+    playerSock.send({ type: 'combat:update', combatantId: wolf.id, hidden: true });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'Only the GM can do that' });
+
+    // Survives reconnects (and server restarts: it lives in the database).
+    gmSock.close();
+    const again = await gm.socket(`campaign=${campaignId}`);
+    expect((await again.until('hello')).combat!.combatants).toHaveLength(2);
+
+    playerSock.send({ type: 'combat:end' });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'Only the GM can do that' });
+    again.send({ type: 'combat:end' });
+    expect((await playerSock.until('log')).entry).toMatchObject({ text: 'Combat ends.' });
+    expect((await playerSock.until('combat')).combat).toBeNull();
+  });
+});
