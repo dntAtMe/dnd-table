@@ -1,6 +1,7 @@
 import type { LogEntry, NewDisplay } from '@dnd/protocol';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RollView } from '../components/RollView';
+import { InitiativeStrip } from '../components/combat/InitiativeStrip';
 import { tokenDecorations } from '../components/combat/TokenDecor';
 import { MapView } from '../components/map/MapView';
 import { api, errorMessage } from '../lib/api';
@@ -178,6 +179,11 @@ export function Table() {
               <p>Waiting for the GM to show a map.</p>
             </div>
           )
+        )}
+        {state.combat && state.combat.combatants.length > 0 && (
+          <div className="table__initiative">
+            <InitiativeStrip combat={state.combat} size="lg" max={7} />
+          </div>
         )}
         {spotlight && (
           <div className={`table__spotlight${state.scene ? ' table__spotlight--over-map' : ''}`}>

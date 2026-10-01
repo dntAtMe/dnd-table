@@ -827,3 +827,15 @@ div.init-strip__open {
     animation: none;
   }
 }
+
+/* ---------- table display ---------- */
+.table__initiative {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
