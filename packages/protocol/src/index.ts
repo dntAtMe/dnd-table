@@ -1,8 +1,10 @@
 // Shapes shared by the server and the web client: REST payloads and WebSocket messages.
 import { z } from 'zod';
 import { MapMessages } from './map';
+import { TemplateMessages, type MapTemplate } from './templates';
 
 export * from './map';
+export * from './templates';
 import { ABILITIES, CHARACTER_VERSION, CONDITION_IDS, MAX_EXHAUSTION, SKILL_IDS, type Character, type Grid, type HealthStatus, type RollResult } from '@dnd/rules';
 
 export type Role = 'gm' | 'player';
@@ -93,6 +95,8 @@ export interface SceneView extends SceneSummary {
   /** Encoded MapData: walls, doors and terrain. Players get closed secret doors as walls. */
   map: string;
   tokens: Token[];
+  /** Area-of-effect templates; hidden ones and ones on tokens this client can't see are left out. */
+  templates: MapTemplate[];
 }
 
 /** A rectangle of the map in map pixels, used to point table screens at part of the map. */
@@ -376,6 +380,7 @@ export const ClientMessage = z.discriminatedUnion('type', [
   }),
 
   ...MapMessages,
+  ...TemplateMessages,
 ]);
 export type ClientMessage = z.infer<typeof ClientMessage>;
 

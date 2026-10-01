@@ -299,7 +299,8 @@ export class Hub {
   private viewFor(conn: Conn): SceneView | null {
     const id = this.sceneIdFor(conn);
     const scene = id ? this.store.getScene(id) : undefined;
-    return scene ? sceneView(scene, this.store.tokens(scene.id), { role: conn.role, userId: conn.user?.id }) : null;
+    if (!scene) return null;
+    return sceneView(scene, this.store.tokens(scene.id), { role: conn.role, userId: conn.user?.id }, this.store.templates(scene.id));
   }
 
   /** Re-sends a scene to everyone looking at it, each filtered for their role. */
@@ -307,12 +308,13 @@ export class Hub {
     const scene = this.store.getScene(sceneId);
     if (!scene) return;
     const tokens = this.store.tokens(sceneId);
+    const templates = this.store.templates(sceneId);
     const views = new Map<string, SceneView>();
     for (const conn of this.rooms.get(campaignId) ?? []) {
       if (this.sceneIdFor(conn) !== sceneId) continue;
       const key = conn.role === 'player' ? `player:${conn.user?.id}` : conn.role;
       let view = views.get(key);
-      if (!view) views.set(key, (view = sceneView(scene, tokens, { role: conn.role, userId: conn.user?.id })));
+      if (!view) views.set(key, (view = sceneView(scene, tokens, { role: conn.role, userId: conn.user?.id }, templates)));
       send(conn.socket, { type: 'scene', scene: view });
     }
   }

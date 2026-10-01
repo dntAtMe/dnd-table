@@ -1,4 +1,4 @@
-import type { ClientRole, GridPatch, SceneSummary, SceneView, Token } from '@dnd/protocol';
+import type { ClientRole, GridPatch, MapTemplate, SceneSummary, SceneView, Token } from '@dnd/protocol';
 import { DEFAULT_GRID, FogMask, GRID_LIMITS, MapData, gridGeometry, type Grid } from '@dnd/rules';
 import type { z } from 'zod';
 import type { SceneRecord } from './store';
@@ -33,8 +33,9 @@ export function tokenVisible(token: Token, viewer: Viewer, scene: SceneRecord, f
   return !scene.fogEnabled || !fog || fog.anyRevealed(token.col, token.row, token.size);
 }
 
-export function sceneView(scene: SceneRecord, tokens: Token[], viewer: Viewer): SceneView {
+export function sceneView(scene: SceneRecord, tokens: Token[], viewer: Viewer, templates: MapTemplate[] = []): SceneView {
   const fog = scene.fogEnabled ? fogMask(scene) : undefined;
+  const visible = tokens.filter((t) => tokenVisible(t, viewer, scene, fog));
   return {
     ...summary(scene),
     width: scene.width,
@@ -43,8 +44,27 @@ export function sceneView(scene: SceneRecord, tokens: Token[], viewer: Viewer): 
     fogEnabled: scene.fogEnabled,
     fog: fog ? fog.encode() : '',
     map: viewer.role === 'gm' || !scene.map ? scene.map : mapData(scene).forPlayers(fog).encode(),
-    tokens: tokens.filter((t) => tokenVisible(t, viewer, scene, fog)),
+    tokens: visible,
+    templates: templateViews(templates, visible, viewer),
   };
+}
+
+/**
+ * Templates this viewer may see: hidden ones are GM-only, and one following a token is only shown
+ * when the token is, at the token's current space (so an Emanation moves with its creature).
+ */
+export function templateViews(templates: MapTemplate[], visibleTokens: Token[], viewer: Viewer): MapTemplate[] {
+  const out: MapTemplate[] = [];
+  for (const t of templates) {
+    if (t.hidden && viewer.role !== 'gm') continue;
+    if (!t.tokenId) {
+      out.push(t);
+      continue;
+    }
+    const token = visibleTokens.find((k) => k.id === t.tokenId);
+    if (token) out.push({ ...t, x: token.col, y: token.row, span: token.size });
+  }
+  return out;
 }
 
 export function applyGridPatch(base: Grid, patch: z.infer<typeof GridPatch> | undefined, width: number, height: number): Grid {

@@ -114,6 +114,17 @@ const MIGRATIONS = [
     updated_at TEXT NOT NULL DEFAULT ${NOW}
   );
   `,
+  `
+  CREATE TABLE templates (
+    id TEXT PRIMARY KEY,
+    scene_id TEXT NOT NULL REFERENCES scenes(id) ON DELETE CASCADE,
+    token_id TEXT REFERENCES tokens(id) ON DELETE CASCADE,
+    owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    data TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT ${NOW}
+  );
+  CREATE INDEX templates_by_scene ON templates (scene_id, created_at);
+  `,
 ];
 
 export function openDb(file: string): DB {
