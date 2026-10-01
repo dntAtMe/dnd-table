@@ -6,6 +6,7 @@ import {
   edgeCode,
   gridGeometry,
   measureMove,
+  moveBlock,
   pointToCell,
   terrainCode,
   type DoorState,
@@ -513,7 +514,9 @@ export function MapView({
       if (g.moved && drag) {
         const { col, row } = cellOf(drag.x, drag.y);
         const token = scene.tokens.find((t) => t.id === g.tokenId);
-        if (token && (col !== token.col || row !== token.row)) {
+        // Players can't pass walls they can see; the server would refuse anyway (and checks the rest).
+        const blocked = !isGm && token && moveBlock(map, token, { col, row }, token.size);
+        if (token && !blocked && (col !== token.col || row !== token.row)) {
           setPending((prev) => ({ ...prev, [g.tokenId]: { col, row } }));
           onMoveToken?.(g.tokenId, col, row);
         }
