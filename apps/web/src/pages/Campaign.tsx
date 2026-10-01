@@ -9,6 +9,8 @@ import { RollView } from '../components/RollView';
 import { MapEditorPanel, SecretDoorToggle, TerrainPicker } from '../components/map/MapEditorPanel';
 import { MapToolbar, type ToolOption } from '../components/map/MapToolbar';
 import { MapView, type MapTool } from '../components/map/MapView';
+import { DEFAULT_TEMPLATE_SETTINGS, type TemplateSettings } from '../components/map/TemplateLayer';
+import { TemplateCard, TemplateOptions } from '../components/map/TemplatePanel';
 import { SceneSettings, ScenesPanel } from '../components/ScenePanels';
 import { AddTokenMenu, TokenInspector } from '../components/TokenPanels';
 import { CharacterCreator } from '../components/character/CharacterCreator';
@@ -51,6 +53,7 @@ const PLAYER_TOOLS: ToolOption[] = [
   { tool: 'move', label: 'Move' },
   { tool: 'ruler', label: 'Measure' },
   { tool: 'ping', label: 'Ping' },
+  { tool: 'template', label: 'Area' },
 ];
 const GM_TOOLS: ToolOption[] = [...PLAYER_TOOLS, { tool: 'reveal', label: 'Reveal' }, { tool: 'hide', label: 'Hide' }];
 const EDIT_TOOLS: ToolOption[] = [
@@ -84,6 +87,8 @@ export function Campaign({ user }: { user: User }) {
   const [brush, setBrush] = useState(3);
   const [terrain, setTerrain] = useState<TerrainId>('floor');
   const [secretDoors, setSecretDoors] = useState(false);
+  const [templateSettings, setTemplateSettings] = useState<TemplateSettings>(DEFAULT_TEMPLATE_SETTINGS);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [levelingId, setLevelingId] = useState<string | null>(null);
   const leveling = state.characters.find((c) => c.id === levelingId);
@@ -118,6 +123,8 @@ export function Campaign({ user }: { user: User }) {
   }, [tableFollows, sendCamera]);
   const isGm = hello?.you.role === 'gm';
   const selectedToken = scene?.tokens.find((t) => t.id === selectedTokenId) ?? null;
+  const selectedTemplate = scene?.templates.find((t) => t.id === selectedTemplateId) ?? null;
+  const canEditTemplate = Boolean(selectedTemplate && (isGm || selectedTemplate.ownerUserId === hello?.you.userId));
   const { combat } = state;
   const decorations = useMemo(
     () => tokenDecorations(combat, scene?.tokens ?? [], { isGm, userId: hello?.you.userId }),
@@ -145,6 +152,22 @@ export function Campaign({ user }: { user: User }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [isGm, selectedToken, send]);
+
+  // Delete/Backspace removes the selected template (its owner or the GM); Escape lets go of it.
+  useEffect(() => {
+    if (!selectedTemplate) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement).closest('input, textarea, select, [contenteditable]')) return;
+      if ((e.key === 'Delete' || e.key === 'Backspace') && canEditTemplate) {
+        e.preventDefault();
+        send({ type: 'template:delete', templateId: selectedTemplate.id });
+      } else if (e.key === 'Escape') {
+        setSelectedTemplateId(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedTemplate, canEditTemplate, send]);
 
   /** Cell at the centre of what the GM is looking at, for dropping new tokens. */
   const viewCentreCell = () => {
@@ -292,6 +315,10 @@ export function Campaign({ user }: { user: User }) {
               secretDoors={secretDoors}
               onMapEdit={send}
               decorations={decorations}
+              templateTool={templateSettings}
+              selectedTemplateId={selectedTemplateId}
+              onSelectTemplate={setSelectedTemplateId}
+              onTemplate={send}
             >
               <MapToolbar
                 tools={isGm ? [...(scene.fogEnabled ? GM_TOOLS : PLAYER_TOOLS), ...EDIT_TOOLS] : PLAYER_TOOLS}
@@ -302,6 +329,14 @@ export function Campaign({ user }: { user: User }) {
               >
                 {isGm && tool === 'terrain' && <TerrainPicker value={terrain} onChange={setTerrain} />}
                 {isGm && tool === 'door' && <SecretDoorToggle secret={secretDoors} onChange={setSecretDoors} />}
+                {tool === 'template' && (
+                  <TemplateOptions
+                    value={templateSettings}
+                    onChange={setTemplateSettings}
+                    isGm={isGm}
+                    onClear={scene.templates.length ? () => send({ type: 'template:clear', sceneId: scene.id }) : undefined}
+                  />
+                )}
                 {isGm && <AddTokenMenu scene={scene} members={state.members} characters={state.characters} at={viewCentreCell} send={send} />}
                 {isGm && isLive && state.displays.length > 0 && (
                   <button
@@ -315,6 +350,17 @@ export function Campaign({ user }: { user: User }) {
                   </button>
                 )}
               </MapToolbar>
+              {selectedTemplate && (
+                <TemplateCard
+                  key={selectedTemplate.id}
+                  template={selectedTemplate}
+                  scene={scene}
+                  isGm={isGm}
+                  canEdit={canEditTemplate}
+                  send={send}
+                  onClose={() => setSelectedTemplateId(null)}
+                />
+              )}
             </MapView>
           ) : (
             <MapEmpty isGm={isGm} />
