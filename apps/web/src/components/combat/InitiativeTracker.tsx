@@ -171,30 +171,6 @@ function HealthCell({ combatant: c }: { combatant: CombatantView }) {
   return <span className="combatant__hp muted">–</span>;
 }
 
-/** Quick combat controls for a selected map token (GM sidebar). */
-export function CombatantCard({ combatant: c, send }: { combatant: CombatantView; send: Send }) {
-  return (
-    <div className="combatant combatant--card">
-      <div className="combatant__row">
-        <span className="combatant__init">{c.initiative ?? '–'}</span>
-        <span className="combatant__main">
-          <span className="combatant__name">
-            <MaybeLink entry={c.monsterId ? { kind: 'monster', id: c.monsterId } : null}>{c.name}</MaybeLink>
-          </span>
-        </span>
-        {c.ac != null && (
-          <span className="combatant__ac" title="Armor Class">
-            <span className="stat-label">AC</span>
-            {c.ac}
-          </span>
-        )}
-        <HealthCell combatant={c} />
-      </div>
-      <CombatantControls combatant={c} isGm send={send} />
-    </div>
-  );
-}
-
 function CombatantControls({ combatant: c, isGm, send }: { combatant: CombatantView; isGm: boolean; send: Send }) {
   const [amount, setAmount] = useState('');
   const tracksHp = c.hpMax != null;
@@ -261,7 +237,7 @@ function CombatantControls({ combatant: c, isGm, send }: { combatant: CombatantV
 }
 
 /** GM: AC and maximum HP for creatures that aren't SRD monsters or characters (e.g. plain tokens). */
-function StatsEditor({ combatant: c, send }: { combatant: CombatantView; send: Send }) {
+export function StatsEditor({ combatant: c, send }: { combatant: CombatantView; send: Send }) {
   const [ac, setAc] = useState(c.ac?.toString() ?? '');
   const [hpMax, setHpMax] = useState(c.hpMax?.toString() ?? '');
   useEffect(() => setAc(c.ac?.toString() ?? ''), [c.ac]);

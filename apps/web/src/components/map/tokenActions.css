@@ -1,0 +1,401 @@
+/* Quick actions beside the selected map token (see TokenActions and TokenPopupAnchor in MapView). */
+
+.token-popup {
+  position: absolute;
+  left: var(--popup-x, 0);
+  top: var(--popup-y, 0);
+  z-index: 6;
+  width: min(330px, calc(100% - 20px));
+  max-height: min(640px, calc(100% - 20px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  user-select: text;
+  -webkit-user-select: text;
+  background: color-mix(in srgb, var(--surface) 97%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.4);
+  font-size: 14px;
+}
+
+/* Placed once its size is known, so it never flashes at the wrong spot. */
+.token-popup:not([data-measured]) {
+  visibility: hidden;
+}
+
+.token-actions {
+  display: grid;
+  gap: 8px;
+  padding: 0 12px 12px;
+  border-top: 4px solid var(--token-color, var(--accent));
+  border-radius: var(--radius);
+}
+
+.token-actions__head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 -12px;
+  padding: 10px 12px 6px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.token-actions__dot {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--token-color, var(--accent));
+}
+
+.token-actions__title {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+
+.token-actions__title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+}
+
+.token-actions__sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.token-actions__close {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.token-actions__close:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.token-actions__vitals:empty {
+  display: none;
+}
+
+.token-actions__vitals {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+}
+
+.token-actions__stat,
+.token-actions__hp {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.token-actions__hp {
+  flex-wrap: wrap;
+  min-width: 110px;
+}
+
+.token-actions__temp {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.token-actions__bar {
+  flex-basis: 100%;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--surface-3);
+}
+
+.token-actions__bar > span {
+  display: block;
+  height: 100%;
+  background: var(--success);
+}
+
+.token-actions__hp--bloodied .token-actions__bar > span {
+  background: var(--crit);
+}
+
+.token-actions__hp--down .token-actions__bar > span {
+  background: var(--danger);
+}
+
+.token-actions__turn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-weight: 600;
+}
+
+.token-actions__hp-form {
+  display: flex;
+  gap: 6px;
+}
+
+.token-actions__hp-form input {
+  width: 0;
+  flex: 1;
+  min-width: 56px;
+  min-height: 32px;
+  padding: 4px 8px;
+}
+
+.token-actions__conditions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.token-actions__condition {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 4px;
+}
+
+.token-actions__condition button {
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.token-actions__condition button:hover {
+  color: var(--text);
+}
+
+.token-actions__panes button {
+  min-height: 30px;
+  padding: 2px 6px;
+  font-size: 13px;
+}
+
+.token-actions__body {
+  display: grid;
+  gap: 8px;
+}
+
+.token-actions__body:empty {
+  display: none;
+}
+
+.token-actions__mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.token-actions__mode .segmented button {
+  min-height: 28px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.token-actions__notice {
+  margin: 0;
+}
+
+.token-actions__list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.token-actions__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.token-actions__row:last-child {
+  border-bottom: 0;
+}
+
+.token-actions__name {
+  min-width: 0;
+  font-weight: 600;
+}
+
+.token-actions__name .muted {
+  font-weight: 400;
+  font-size: 12px;
+}
+
+.token-actions__rolls {
+  display: flex;
+  gap: 4px;
+}
+
+.token-actions .roll-btn {
+  min-width: 40px;
+  min-height: 30px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.token-actions .statblock__rider {
+  flex-wrap: wrap;
+}
+
+.token-actions__section h4 {
+  margin: 4px 0 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.statblock__action--compact {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.statblock__action--compact:last-child {
+  border-bottom: 0;
+}
+
+.statblock__action--compact .statblock__desc {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
+.statblock__name-toggle {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+
+.statblock__name-toggle::after {
+  content: ' ▸';
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.statblock__name-toggle[aria-expanded='true']::after {
+  content: ' ▾';
+}
+
+.token-actions__abilities {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.token-actions__abilities th,
+.token-actions__abilities td {
+  padding: 2px 4px;
+  text-align: center;
+}
+
+.token-actions__abilities thead th {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.token-actions__abilities tbody th {
+  text-align: left;
+  font-size: 12px;
+}
+
+.token-actions__abilities .roll-btn {
+  width: 100%;
+}
+
+.token-actions__skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.token-actions__skills .roll-btn {
+  min-height: 28px;
+  font-size: 12px;
+}
+
+.token-actions__chips .chip {
+  font-size: 12px;
+}
+
+.token-actions__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.entity-link.token-actions__statblock {
+  border: 1px solid var(--border);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.token-actions__more {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.token-actions__more summary {
+  cursor: pointer;
+}
+
+.token-actions__more[open] {
+  display: grid;
+  gap: 6px;
+  color: var(--text);
+}
+
+/* Phones: a sheet along the bottom of the map instead of a card beside the token. */
+@media (max-width: 960px) {
+  .token-popup {
+    left: 8px;
+    right: 8px;
+    top: auto;
+    bottom: 8px;
+    width: auto;
+    max-height: 66%;
+  }
+}

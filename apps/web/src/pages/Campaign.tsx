@@ -9,6 +9,7 @@ import { RollView } from '../components/RollView';
 import { MapEditorPanel, SecretDoorToggle, TerrainPicker } from '../components/map/MapEditorPanel';
 import { MapToolbar, type ToolOption } from '../components/map/MapToolbar';
 import { MapView, type MapTool } from '../components/map/MapView';
+import { TokenActions } from '../components/map/TokenActions';
 import { DEFAULT_TEMPLATE_SETTINGS, type TemplateSettings } from '../components/map/TemplateLayer';
 import { TemplateCard, TemplateOptions } from '../components/map/TemplatePanel';
 import { SceneSettings, ScenesPanel } from '../components/ScenePanels';
@@ -18,7 +19,6 @@ import { CharacterCreator } from '../components/character/CharacterCreator';
 import { CharacterPanel } from '../components/character/CharacterSheet';
 import { CombatPanel } from '../components/combat/CombatPanel';
 import { InitiativeStrip } from '../components/combat/InitiativeStrip';
-import { CombatantCard } from '../components/combat/InitiativeTracker';
 import { tokenDecorations } from '../components/combat/TokenDecor';
 import { LevelUp } from '../components/character/LevelUp';
 import { AudioControl, AudioUnlockPrompt } from '../components/audio/AudioControls';
@@ -129,6 +129,11 @@ export function Campaign({ user }: { user: User }) {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [levelingId, setLevelingId] = useState<string | null>(null);
+  const [sheetId, setSheetId] = useState<string | null>(null);
+  const openSheet = useCallback((characterId: string) => {
+    setSheetId(characterId);
+    setTab('sheet');
+  }, []);
   const leveling = state.characters.find((c) => c.id === levelingId);
   const viewRect = useRef<CameraRect | null>(null);
   const [followTable, setFollowTable] = useState(false);
@@ -194,17 +199,14 @@ export function Campaign({ user }: { user: User }) {
   );
   const activeCombatant = combat?.combatants.find((c) => c.id === combat.activeId);
   const myTurn = Boolean(activeCombatant && !isGm && activeCombatant.ownerUserId === hello?.you.userId);
-  const selectedCombatant = selectedToken
-    ? combat?.combatants.find((c) => c.tokenId === selectedToken.id || (c.characterId !== null && c.characterId === selectedToken.characterId))
-    : undefined;
 
-  // GM shortcut: Delete/Backspace removes the selected token.
+  // Escape lets go of the selected token (closing its quick actions); for the GM, Delete/Backspace removes it.
   useEffect(() => {
-    if (!isGm || !selectedToken) return;
+    if (!selectedToken) return;
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (target.closest('input, textarea, select, [contenteditable]')) return;
-      if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (isGm && (e.key === 'Delete' || e.key === 'Backspace')) {
         e.preventDefault();
         send({ type: 'token:delete', tokenId: selectedToken.id });
       } else if (e.key === 'Escape') {
@@ -335,11 +337,6 @@ export function Campaign({ user }: { user: User }) {
               <LightPicker token={selectedToken} send={send} />
             </Section>
           )}
-          {isGm && selectedCombatant && (
-            <Section title="In combat">
-              <CombatantCard key={selectedCombatant.id} combatant={selectedCombatant} send={send} />
-            </Section>
-          )}
           {isGm && (
             <Section title="Soundboard">
               <SoundboardPanel campaignId={hello.campaign.id} tracks={state.tracks} audio={state.audio} send={send} />
@@ -419,6 +416,18 @@ export function Campaign({ user }: { user: User }) {
               selectedTemplateId={selectedTemplateId}
               onSelectTemplate={setSelectedTemplateId}
               onTemplate={send}
+              tokenPopup={(token) => (
+                <TokenActions
+                  token={token}
+                  combat={combat}
+                  characters={state.characters}
+                  isGm={isGm}
+                  userId={hello.you.userId}
+                  send={send}
+                  onClose={() => setSelectedTokenId(null)}
+                  onOpenSheet={openSheet}
+                />
+              )}
             >
               <MapToolbar
                 tools={isGm ? [...(scene.fogEnabled ? GM_TOOLS : PLAYER_TOOLS), ...EDIT_TOOLS] : PLAYER_TOOLS}
@@ -508,6 +517,8 @@ export function Campaign({ user }: { user: User }) {
               send={send}
               onCreate={() => setCreating(true)}
               onLevelUp={(record) => setLevelingId(record.id)}
+              selectedId={sheetId}
+              onSelect={setSheetId}
             />
           )}
         </section>
