@@ -303,6 +303,9 @@ what protects against it, which weapons have a property, who casts a spell.
 
 - **Hover** (mouse) to preview; **click** or **Ctrl/⌘-click** to pin. Links inside a popup open
   further popups beside it. On phones a tap opens a sheet.
+- The **pin** in a popup's corner shows whether it stays open; click it to unpin, and the popup closes
+  again once you move away.
+- **Drag a popup by its header** to move it out of the way. It stays where you put it.
 - **Escape** closes the top popup. **Shift-click** a link (or *Open in Compendium*) to open the entry
   in the Compendium, with search, filters and back/forward history.
 - **Ctrl/⌘ K** opens quick search: arrow keys to choose, **Enter** pins, **Shift+Enter** opens in the

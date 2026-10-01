@@ -48,5 +48,5 @@ laptop, player phones and a TV.
 
 - The SRD 5.2 (classes, species, backgrounds, feats, equipment, 339 spells, 341 monsters, 262 magic
   items, rules terms) imported reproducibly from a pinned dataset.
-- Every name is a link, with nested hover popups, a searchable Compendium, Ctrl/⌘ K quick search and
-  related entries worked out from the data.
+- Every name is a link, with nested hover popups you can pin and move, a searchable Compendium,
+  Ctrl/⌘ K quick search and related entries worked out from the data.
