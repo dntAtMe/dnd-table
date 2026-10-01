@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { CampaignSummary, CharacterRecord, HandoutAudience, LogEntry, Role, SceneSummary, Token, User, Visibility } from '@dnd/protocol';
+import type { CampaignSummary, CharacterRecord, HandoutAudience, LogEntry, Role, SceneSummary, Token, Track, TrackKind, User, Visibility } from '@dnd/protocol';
 import type { Character, Grid } from '@dnd/rules';
 import type { Encounter } from './combat';
 import type { DB } from './db';
@@ -407,6 +407,50 @@ export class Store {
       .run(handoutId, userId, stamp());
   }
 
+  // ---------- soundboard ----------
+
+  private static toTrack(row: Row): Track & { campaignId: string } {
+    return {
+      id: row.id as string,
+      campaignId: row.campaign_id as string,
+      name: row.name as string,
+      fileId: row.file_id as string,
+      url: `/files/${row.filename as string}`,
+      kind: row.kind as TrackKind,
+      loop: Boolean(row.loop),
+      volume: Number(row.volume),
+      duration: row.duration === null ? null : Number(row.duration),
+    };
+  }
+
+  tracks(campaignId: string): (Track & { campaignId: string })[] {
+    const rows = this.db.prepare(`${TRACK_SELECT} WHERE t.campaign_id = ? ORDER BY t.rowid`).all(campaignId) as Row[];
+    return rows.map(Store.toTrack);
+  }
+
+  getTrack(id: string): (Track & { campaignId: string }) | undefined {
+    const row = this.db.prepare(`${TRACK_SELECT} WHERE t.id = ?`).get(id) as Row | undefined;
+    return row && Store.toTrack(row);
+  }
+
+  createTrack(t: Omit<Track, 'id' | 'url'> & { campaignId: string }): string {
+    const id = randomUUID();
+    this.db
+      .prepare('INSERT INTO tracks (id, campaign_id, name, file_id, kind, loop, volume, duration) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, t.campaignId, t.name, t.fileId, t.kind, t.loop ? 1 : 0, t.volume, t.duration);
+    return id;
+  }
+
+  updateTrack(t: Pick<Track, 'id' | 'name' | 'kind' | 'loop' | 'volume'>): void {
+    this.db
+      .prepare('UPDATE tracks SET name = ?, kind = ?, loop = ?, volume = ? WHERE id = ?')
+      .run(t.name, t.kind, t.loop ? 1 : 0, t.volume, t.id);
+  }
+
+  deleteTrack(id: string): void {
+    this.db.prepare('DELETE FROM tracks WHERE id = ?').run(id);
+  }
+
   // ---------- scenes ----------
 
   private static toScene(row: Row): SceneRecord {
@@ -660,6 +704,10 @@ function stamp(): string {
 const HANDOUT_SELECT = `
   SELECT h.id, h.campaign_id, h.title, h.text, h.file_id, h.audience, h.revised_at, h.created_at, f.filename
   FROM handouts h LEFT JOIN files f ON f.id = h.file_id`;
+
+const TRACK_SELECT = `
+  SELECT t.id, t.campaign_id, t.name, t.file_id, t.kind, t.loop, t.volume, t.duration, f.filename
+  FROM tracks t JOIN files f ON f.id = t.file_id`;
 
 const SCENE_SELECT = `
   SELECT s.id, s.campaign_id, s.name, s.width, s.height, s.grid, s.fog_enabled, s.fog, s.map, f.filename

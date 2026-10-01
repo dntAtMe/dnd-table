@@ -28,6 +28,7 @@ import {
   type User,
 } from '@dnd/protocol';
 import type { WebSocket } from 'ws';
+import { Soundboard, isAudioMessage } from './audio';
 import { CombatTracker, isCombatMessage } from './combat';
 import { Handouts, isHandoutMessage } from './handouts';
 import { applyMapEdit, checkPlayerMove, remapForGrid } from './mapEditor';
@@ -71,12 +72,15 @@ export class Hub {
   private readonly heartbeat: NodeJS.Timeout;
   private readonly combat: CombatTracker<Conn>;
   private readonly handouts: Handouts<Conn>;
+  private readonly audio: Soundboard<Conn>;
 
   constructor(private readonly store: Store) {
-    this.handouts = new Handouts<Conn>(store, {
-      connections: (campaignId) => this.rooms.get(campaignId) ?? [],
-      send: (conn, msg) => send(conn.socket, msg),
-    });
+    const host = {
+      connections: (campaignId: string) => this.rooms.get(campaignId) ?? [],
+      send: (conn: Conn, msg: ServerMessage) => send(conn.socket, msg),
+    };
+    this.handouts = new Handouts<Conn>(store, host);
+    this.audio = new Soundboard<Conn>(store, host);
     this.combat = new CombatTracker<Conn>(store, {
       broadcast: (campaignId, build) => {
         for (const conn of this.rooms.get(campaignId) ?? []) send(conn.socket, build(conn));
@@ -184,6 +188,8 @@ export class Hub {
       combat: this.combat.viewFor(conn),
       handouts: this.handouts.viewFor(conn),
       showcase: this.handouts.showcaseFor(conn),
+      audio: this.audio.stateFor(conn.campaignId),
+      ...(isGm && { tracks: this.audio.tracks(conn.campaignId) }),
     });
   }
 
@@ -546,6 +552,7 @@ export class Hub {
   private dispatch(conn: Conn & { user: User }, msg: ClientMessage): void {
     if (isCombatMessage(msg)) return this.combat.handle(conn, msg);
     if (isHandoutMessage(msg)) return this.handouts.handle(conn, msg);
+    if (isAudioMessage(msg)) return this.audio.handle(conn, msg);
     switch (msg.type) {
       case 'roll': {
         const roll = rollDice(msg.expr);

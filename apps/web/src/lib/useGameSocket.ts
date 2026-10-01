@@ -1,5 +1,6 @@
 import {
   CloseCode,
+  type AudioState,
   type CameraRect,
   type CharacterRecord,
   type ClientMessage,
@@ -14,6 +15,7 @@ import {
   type SceneView,
   type ServerMessage,
   type Showcase,
+  type Track,
 } from '@dnd/protocol';
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 
@@ -50,6 +52,14 @@ export interface GameState {
   handouts: HandoutView[];
   /** A handout or image the GM is showing over the map. */
   showcase: Showcase | null;
+  /** Shared playback state. */
+  audio: AudioState;
+  /** Server clock minus ours (ms), estimated from the last audio state, for seeking in sync. */
+  clockOffset: number;
+  /** GM only: the soundboard. */
+  tracks: Track[];
+  /** The latest one-shot sound effect, with a nonce so repeats re-trigger. */
+  effect?: { url: string; volume: number; nonce: number };
   /** Latest GM framing (table displays only). */
   camera?: { sceneId: string; rect: CameraRect };
   /** Set for table displays that still need pairing. */
@@ -81,7 +91,12 @@ const initial: GameState = {
   combat: null,
   handouts: [],
   showcase: null,
+  audio: { layers: [], volume: 1, serverTime: 0 },
+  clockOffset: 0,
+  tracks: [],
 };
+
+let effectSeq = 0;
 
 let pingSeq = 0;
 
@@ -116,6 +131,10 @@ function reducer(state: GameState, action: Action): GameState {
             combat: msg.combat,
             handouts: msg.handouts,
             showcase: msg.showcase,
+            audio: msg.audio,
+            clockOffset: msg.audio.serverTime - Date.now(),
+            tracks: msg.tracks ?? [],
+            effect: undefined,
             camera: undefined,
             unpairedCode: undefined,
           };
@@ -148,6 +167,12 @@ function reducer(state: GameState, action: Action): GameState {
           return { ...state, handouts: msg.handouts };
         case 'showcase':
           return { ...state, showcase: msg.showcase };
+        case 'audio':
+          return { ...state, audio: msg.audio, clockOffset: msg.audio.serverTime - Date.now() };
+        case 'tracks':
+          return { ...state, tracks: msg.tracks };
+        case 'audio:effect':
+          return { ...state, effect: { url: msg.url, volume: msg.volume, nonce: ++effectSeq } };
         case 'display:unpaired':
           return { ...initial, status: 'open', unpairedCode: msg.code };
       }

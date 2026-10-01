@@ -137,6 +137,18 @@ const MIGRATIONS = [
     read_at TEXT NOT NULL,
     PRIMARY KEY (handout_id, user_id)
   );
+  CREATE TABLE tracks (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    file_id TEXT NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('music', 'ambience', 'effect')),
+    loop INTEGER NOT NULL DEFAULT 0,
+    volume REAL NOT NULL DEFAULT 1,
+    duration REAL,
+    created_at TEXT NOT NULL DEFAULT ${NOW}
+  );
+  CREATE INDEX tracks_by_campaign ON tracks (campaign_id, created_at);
   `,
 ];
 

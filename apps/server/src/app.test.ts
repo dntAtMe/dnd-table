@@ -1203,3 +1203,108 @@ describe('handouts', () => {
     tv2.close();
   });
 });
+
+describe('soundboard', () => {
+  it('lets the GM manage tracks and keeps every screen on the same playback state', async () => {
+    const { gm, player, campaignId } = await campaignWithPlayer();
+    const gmSock = await gm.socket(`campaign=${campaignId}`);
+    const hello = await gmSock.until('hello');
+    expect(hello.tracks).toEqual([]);
+    expect(hello.audio).toMatchObject({ layers: [], volume: 1 });
+    await player.call('POST', '/api/campaigns/join', { inviteCode: hello.campaign.inviteCode });
+    const anaSock = await player.socket(`campaign=${campaignId}`);
+    const anaHello = await anaSock.until('hello');
+    expect(anaHello.tracks).toBeUndefined();
+    const { data: display } = await new Client().call('POST', '/api/displays');
+    const tv = await Sock.open(`ws://${base}/ws?display=${display.token}`, '');
+    await tv.until('display:unpaired');
+    await gm.call('POST', `/api/campaigns/${campaignId}/displays`, { code: display.code });
+    expect((await tv.until('hello')).tracks).toBeUndefined();
+
+    const upload = async (body: Uint8Array) => (await gm.call('POST', `/api/campaigns/${campaignId}/files`, body)).data as { id: string; url: string };
+    const [mp3, ogg, wav, png] = await Promise.all([upload(AUDIO.mp3), upload(AUDIO.ogg), upload(AUDIO.wav), upload(new Uint8Array(PNG))]);
+
+    // Only the GM manages tracks, and only with this campaign's audio files.
+    anaSock.send({ type: 'track:create', name: 'Mine', fileId: mp3.id, kind: 'music', loop: true, volume: 1 });
+    expect(await anaSock.until('error')).toMatchObject({ message: 'Only the GM can do that' });
+    gmSock.send({ type: 'track:create', name: 'Picture', fileId: png.id, kind: 'music', loop: true, volume: 1 });
+    expect(await gmSock.until('error')).toMatchObject({ message: 'Audio file not found' });
+
+    const add = async (name: string, file: { id: string }, kind: string, loop: boolean, volume: number, duration: number | null) => {
+      gmSock.send({ type: 'track:create', name, fileId: file.id, kind, loop, volume, duration });
+      const { tracks } = await gmSock.until('tracks', (m) => m.tracks.some((t) => t.name === name));
+      return tracks.find((t) => t.name === name)!;
+    };
+    const tavern = await add('Tavern', mp3, 'music', true, 0.8, 120);
+    expect(tavern).toMatchObject({ fileId: mp3.id, url: mp3.url, kind: 'music', loop: true, volume: 0.8, duration: 120 });
+    const rain = await add('Rain', ogg, 'ambience', true, 0.6, null);
+    const battle = await add('Battle', wav, 'music', true, 1, 90);
+    const door = await add('Door', wav, 'effect', false, 0.9, 1.5);
+
+    const layerNames = (m: { audio: { layers: { name: string }[] } }) => m.audio.layers.map((l) => l.name);
+
+    // Music plus an ambience layer; starting other music replaces the old one.
+    gmSock.send({ type: 'audio:play', trackId: tavern.id });
+    const started = await tv.until('audio');
+    expect(started.audio.layers).toEqual([
+      expect.objectContaining({ trackId: tavern.id, url: mp3.url, kind: 'music', loop: true, volume: 0.8, playing: true, position: 0 }),
+    ]);
+    expect(started.audio.serverTime - started.audio.layers[0]!.startedAt).toBeGreaterThanOrEqual(0);
+    expect(await anaSock.until('audio')).toEqual(started);
+    gmSock.send({ type: 'audio:play', trackId: rain.id });
+    expect(layerNames(await tv.until('audio'))).toEqual(['Tavern', 'Rain']);
+    gmSock.send({ type: 'audio:play', trackId: battle.id });
+    expect(layerNames(await tv.until('audio'))).toEqual(['Rain', 'Battle']);
+
+    // Volumes: per layer and master.
+    gmSock.send({ type: 'audio:volume', trackId: rain.id, volume: 0.3 });
+    expect((await tv.until('audio')).audio.layers[0]).toMatchObject({ trackId: rain.id, volume: 0.3 });
+    gmSock.send({ type: 'audio:volume', trackId: null, volume: 0.5 });
+    expect((await tv.until('audio')).audio.volume).toBe(0.5);
+    gmSock.send({ type: 'audio:volume', trackId: tavern.id, volume: 0.5 });
+    expect(await gmSock.until('error')).toMatchObject({ message: "That track isn't playing" });
+
+    // One-shot effects play once for whoever is connected and don't join the shared state.
+    gmSock.send({ type: 'audio:play', trackId: door.id });
+    expect(await tv.until('audio:effect')).toMatchObject({ trackId: door.id, url: wav.url, volume: 0.9 });
+    expect(await anaSock.until('audio:effect')).toMatchObject({ trackId: door.id });
+
+    // Pause keeps the position; late joiners get the state with a server timestamp to seek by.
+    await new Promise((r) => setTimeout(r, 40));
+    gmSock.send({ type: 'audio:pause', trackId: battle.id });
+    const paused = (await tv.until('audio')).audio.layers.find((l) => l.trackId === battle.id)!;
+    expect(paused.playing).toBe(false);
+    expect(paused.position).toBeGreaterThanOrEqual(0.03);
+    const late = await (await player.socket(`campaign=${campaignId}`)).until('hello');
+    expect(late.audio.volume).toBe(0.5);
+    const lateRain = late.audio.layers.find((l) => l.trackId === rain.id)!;
+    expect(lateRain).toMatchObject({ playing: true, volume: 0.3 });
+    expect(late.audio.serverTime - lateRain.startedAt).toBeGreaterThanOrEqual(40);
+    expect(late.audio.layers.find((l) => l.trackId === battle.id)).toMatchObject({ playing: false, position: paused.position });
+
+    // Resuming continues from where it paused.
+    gmSock.send({ type: 'audio:play', trackId: battle.id });
+    const resumed = (await tv.until('audio')).audio;
+    const battleLayer = resumed.layers.find((l) => l.trackId === battle.id)!;
+    expect(battleLayer.playing).toBe(true);
+    expect(resumed.serverTime - battleLayer.startedAt).toBeGreaterThanOrEqual(paused.position * 1000 - 1);
+
+    // Players can't touch playback.
+    anaSock.send({ type: 'audio:stop-all' });
+    expect(await anaSock.until('error')).toMatchObject({ message: 'Only the GM can do that' });
+
+    // Track edits apply to what's playing; deleting a track stops it.
+    gmSock.send({ type: 'track:update', trackId: rain.id, name: 'Storm', loop: false });
+    expect((await tv.until('audio')).audio.layers[0]).toMatchObject({ name: 'Storm', loop: false });
+    gmSock.send({ type: 'track:delete', trackId: rain.id });
+    expect(layerNames(await tv.until('audio'))).toEqual(['Battle']);
+    expect((await gmSock.until('tracks', (m) => m.tracks.length === 3)).tracks.map((t) => t.name)).toEqual(['Tavern', 'Battle', 'Door']);
+    gmSock.send({ type: 'audio:stop', trackId: battle.id });
+    expect((await tv.until('audio')).audio.layers).toEqual([]);
+    gmSock.send({ type: 'audio:play', trackId: tavern.id });
+    await tv.until('audio', (m) => m.audio.layers.length === 1);
+    gmSock.send({ type: 'audio:stop-all' });
+    expect((await tv.until('audio')).audio.layers).toEqual([]);
+    tv.close();
+  });
+});
