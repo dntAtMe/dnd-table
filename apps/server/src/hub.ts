@@ -32,6 +32,7 @@ import { CombatTracker, isCombatMessage } from './combat';
 import { applyMapEdit, checkPlayerMove, remapForGrid } from './mapEditor';
 import { GameError, applyGridPatch, clampToGrid, fogMask, sceneView, summary } from './scenes';
 import type { Display, SceneRecord, Store } from './store';
+import { applyTemplateMessage, isTemplateMessage } from './templates';
 
 const LOG_HISTORY = 100;
 const HEARTBEAT_MS = 30_000;
@@ -537,7 +538,17 @@ export class Hub {
   }
 
   private dispatch(conn: Conn & { user: User }, msg: ClientMessage): void {
-    if (isCombatMessage(msg)) return this.combat.handle(conn, msg);
+    if (isCombatMessage(msg)) {
+      this.combat.handle(conn, msg);
+      // One-shot areas (a Fireball) have gone off once the turn passes.
+      if (msg.type === 'combat:turn') for (const id of this.store.deleteOneShotTemplates(conn.campaignId)) this.sceneChanged(conn.campaignId, id);
+      return;
+    }
+    if (isTemplateMessage(msg)) {
+      const activeSceneId = this.store.activeSceneId(conn.campaignId);
+      const actor = { role: conn.role, userId: conn.user.id, campaignId: conn.campaignId, activeSceneId };
+      return this.sceneChanged(conn.campaignId, applyTemplateMessage(this.store, msg, actor));
+    }
     switch (msg.type) {
       case 'roll': {
         const roll = rollDice(msg.expr);
