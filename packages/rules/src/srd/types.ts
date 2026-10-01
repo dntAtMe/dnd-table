@@ -171,3 +171,84 @@ export interface RulesText {
   weaponProperties: Record<string, { name: string; description: string }>;
   skills: Record<string, { name: string; ability: Ability; description: string }>;
 }
+
+export interface MonsterDamage {
+  /** Average damage as printed in the stat block. */
+  average: number;
+  /** Roll expression, e.g. "2d6 + 3", or a flat number ("1"). */
+  dice: string;
+  type: DamageType;
+}
+
+export interface MonsterAttack {
+  kind: 'melee' | 'ranged' | 'melee or ranged';
+  bonus: number;
+  reach?: string;
+  range?: string;
+  /** Damage on a hit (several entries for "… plus 7 (2d6) Fire damage"). */
+  damage: MonsterDamage[];
+  /** Conditional damage, e.g. "if the attack roll had Advantage", or "instead if the swarm is Bloodied". */
+  riders?: (MonsterDamage & { note: string })[];
+}
+
+export interface MonsterSave {
+  ability: Ability;
+  dc: number;
+  /** Damage on a failed save. */
+  damage?: MonsterDamage[];
+  /** Half damage on a success. */
+  half?: boolean;
+}
+
+export interface MonsterAction {
+  name: string;
+  description: string;
+  /** "Recharge 5–6", "3/Day", … */
+  usage?: string;
+  attack?: MonsterAttack;
+  save?: MonsterSave;
+  /** SRD spell ids, for spellcasting entries. */
+  spells?: string[];
+}
+
+export type MonsterSize = 'Tiny' | 'Small' | 'Medium' | 'Large' | 'Huge' | 'Gargantuan' | 'Medium or Small';
+
+export interface MonsterDef {
+  id: string;
+  name: string;
+  size: MonsterSize;
+  type: string;
+  alignment: string;
+  ac: number;
+  /** Armor worn, if the stat block names it. */
+  acNote?: string;
+  /** Average hit points. */
+  hp: number;
+  hpFormula: string;
+  /** Speeds in feet: walk, fly, swim, climb, burrow. */
+  speed: Record<string, number>;
+  hover?: boolean;
+  scores: Record<Ability, number>;
+  /** Saving throw bonuses that differ from the plain modifier (proficient saves). */
+  saves: Partial<Record<Ability, number>>;
+  skills: Partial<Record<Skill, number>>;
+  vulnerabilities: string[];
+  resistances: string[];
+  immunities: string[];
+  conditionImmunities: string[];
+  /** e.g. { darkvision: "60 ft." } */
+  senses: Record<string, string>;
+  passivePerception: number;
+  languages: string;
+  /** Challenge rating: 0.125, 0.25, 0.5, 1, 2, … */
+  cr: number;
+  xp: number;
+  xpInLair?: number;
+  profBonus: number;
+  gear?: string;
+  traits: MonsterAction[];
+  actions: MonsterAction[];
+  bonusActions: MonsterAction[];
+  reactions: MonsterAction[];
+  legendaryActions: MonsterAction[];
+}
