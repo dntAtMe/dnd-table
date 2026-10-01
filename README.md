@@ -34,7 +34,9 @@ Phases 1–3 are done:
 - [x] Phase 4: combat: initiative tracker, HP and conditions synced with sheets, SRD monsters with
       stat blocks and tap-to-roll attacks, hidden creatures, HP bars and turn markers on the map,
       2024 encounter difficulty
-- [ ] Phase 5: handouts, scenes, AoE templates, lighting, audio
+- [x] Handouts (text and images) shared with everyone or chosen players, shown full-screen on the TV
+- [x] Ambient audio: a GM soundboard with music, ambience layers and effects, synced to every screen
+- [ ] Phase 5: scenes, AoE templates, lighting
 
 ## Running locally
 
@@ -90,6 +92,34 @@ movement cost through difficult terrain ("30 ft (40 ft move)") and turns red whe
 5. Players and table screens see the order and whose turn it is, but never hidden creatures, and
    only Healthy / Bloodied / Down for creatures that aren't theirs.
 
+### Handouts
+
+1. Open **Handouts** (next to Combat) and write one: a title, an optional image and plain text
+   (a blank line starts a new paragraph). **Preview** shows it as players will see it.
+2. Choose who gets it: **Draft** (only you), **Everyone**, or **Some players**. Players find shared
+   handouts in their own Handouts view, newest first, with a dot until they've read them, and get a
+   notice when a new one arrives. Changing a shared handout marks it unread again; switching back to
+   Draft takes it away. Players never receive handouts that aren't shared with them.
+3. **Show on table** puts a handout full-screen over the map on the table screens (tick *Also pop it
+   up on players' screens* to show it to everyone). With no handout selected you can put any image
+   up straight away. **Back to map** (in the Handouts view or on the map) takes it down.
+
+### Ambient audio
+
+1. In the GM sidebar, open **Soundboard** → **Add track** and upload MP3, OGG, WAV, M4A/AAC or FLAC
+   (up to 50 MB). Pick a kind: **Music** (one at a time; starting another crossfades), **Ambience**
+   (layers that play together, e.g. rain over tavern chatter) or **Effects** (one-shots).
+2. Press play/pause/stop on any track and mix with each layer's slider and the master volume.
+   Click a track's name to rename it, change its kind, loop and default volume, or delete it.
+3. Table screens play the audio and show what's playing in their header (click it to mute that
+   screen). Browsers only allow sound after an interaction, so the first time a TV needs a click or
+   key press; for a kiosk, start Chrome with `--autoplay-policy=no-user-gesture-required`.
+4. Players switch audio on for their device with the speaker button in the top bar (off by default
+   on phones and tablets) and set their own volume. The GM can turn it on too, to hear the mix.
+
+Playback state lives on the server: someone joining mid-song starts at the same point as everyone
+else (to within a second or so).
+
 ### Single-port production mode
 
 ```bash
@@ -106,7 +136,7 @@ pnpm start          # serves the client and API on http://0.0.0.0:3000
 | `COOKIE_SECURE` | `false` | Set `true` when served over HTTPS                                 |
 | `LOG_REQUESTS`  | `false` | Log every HTTP request                                            |
 
-All state is in `data/`: one SQLite file (`dnd-table.db`) plus uploaded images in `uploads/`.
+All state is in `data/`: one SQLite file (`dnd-table.db`) plus uploaded images and audio in `uploads/`.
 Back it up by copying that folder.
 
 ## Layout
