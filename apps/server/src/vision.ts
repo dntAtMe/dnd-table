@@ -15,7 +15,7 @@ import {
   type Sight,
   type TokenSenses,
 } from '@dnd/rules';
-import { GameError, sceneView, type Viewer } from './scenes';
+import { GameError, fogMask, sceneView, type Viewer } from './scenes';
 import type { SceneRecord, Store, TokenVision } from './store';
 
 export function isVisionMessage(msg: ClientMessage): msg is VisionMessage {
@@ -75,6 +75,30 @@ export class VisionTracker<C extends VisionConn> {
     if (!settings.enabled || viewer.role === 'gm') return sceneView(scene, tokens, viewer, settings);
     const eyes = viewer.role === 'display' ? this.partyTokens(scene, tokens) : tokens.filter((t) => viewer.userId && t.ownerUserId === viewer.userId);
     return sceneView(scene, tokens, viewer, settings, this.sight(scene, settings, tokens, eyes));
+  }
+
+  /**
+   * Dynamic fog: reveals every cell the party sees right now on the scene in play, so explored areas
+   * stay mapped. Writes only when that actually reveals something new. Returns the scene as stored.
+   */
+  explore(scene: SceneRecord, tokens: Token[]): SceneRecord {
+    if (!scene.fogEnabled || scene.id !== this.store.activeSceneId(scene.campaignId)) return scene;
+    const settings = this.store.sceneVision(scene.id);
+    if (!settings.enabled || !settings.dynamicFog) return scene;
+    const { visible } = this.sight(scene, settings, tokens, this.partyTokens(scene, tokens));
+    const fog = fogMask(scene);
+    let changed = false;
+    for (let i = 0; i < fog.bits.length; i++) {
+      const next = fog.bits[i]! | (visible.bits[i] ?? 0);
+      if (next !== fog.bits[i]) {
+        fog.bits[i] = next;
+        changed = true;
+      }
+    }
+    if (!changed) return scene;
+    const encoded = fog.encode();
+    this.store.updateScene(scene.id, { fog: encoded });
+    return { ...scene, fog: encoded };
   }
 
   handle(conn: C, msg: VisionMessage): void {

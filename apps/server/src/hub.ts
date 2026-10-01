@@ -308,9 +308,10 @@ export class Hub {
 
   /** Re-sends a scene to everyone looking at it, each filtered for their role. */
   private sceneChanged(campaignId: string, sceneId: string): void {
-    const scene = this.store.getScene(sceneId);
-    if (!scene) return;
+    const stored = this.store.getScene(sceneId);
+    if (!stored) return;
     const tokens = this.vision.tokens(sceneId);
+    const scene = this.vision.explore(stored, tokens);
     const views = new Map<string, SceneView>();
     for (const conn of this.rooms.get(campaignId) ?? []) {
       if (this.sceneIdFor(conn) !== sceneId) continue;
@@ -325,6 +326,8 @@ export class Hub {
   private scenesChanged(campaignId: string): void {
     const scenes = this.store.scenes(campaignId).map(summary);
     const activeSceneId = this.store.activeSceneId(campaignId);
+    const active = activeSceneId && this.store.getScene(activeSceneId);
+    if (active) this.vision.explore(active, this.vision.tokens(active.id));
     for (const conn of this.rooms.get(campaignId) ?? []) {
       if (conn.role === 'gm') send(conn.socket, { type: 'scenes', scenes, activeSceneId });
       send(conn.socket, { type: 'scene', scene: this.viewFor(conn) });

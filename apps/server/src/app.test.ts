@@ -4,10 +4,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { ServerMessage } from '@dnd/protocol';
 import { CHARACTER_VERSION, emptyState, type Character } from '@dnd/rules';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import { buildApp } from './app';
 import { openDb } from './db';
+import { Store } from './store';
 import type { SceneView } from '@dnd/protocol';
 import { FogMask, MapData, gridGeometry, terrainCode, type Edge } from '@dnd/rules';
 
@@ -1126,5 +1127,45 @@ describe('vision', () => {
     expect(names(tvView)).toEqual(['Ana', 'Bram', 'Familiar', 'Goblin', 'Orc']);
     expect(mask(tvView, 'visible').bits.every((b) => b === 0xff)).toBe(true);
     tv.close();
+  });
+
+  it('remembers explored areas with dynamic fog, writing only when something new is seen', async () => {
+    const { gmSock, playerSock, sceneId, ana, goblin } = await visionTable();
+    gmSock.send({ type: 'vision:scene', sceneId, enabled: true, dynamicFog: true });
+    // Dynamic fog turns fog on; what Ana sees is revealed for good.
+    const gmView = (await gmSock.until('scene', (m) => m.scene!.fogEnabled)).scene!;
+    expect(gmView.vision).toEqual({ enabled: true, lighting: 'bright', dynamicFog: true });
+    expect(mask(gmView, 'fog').isRevealed(0, 7)).toBe(true);
+    expect(mask(gmView, 'fog').isRevealed(6, 1)).toBe(false);
+    let view = (await playerSock.until('scene', (m) => m.scene!.fogEnabled)).scene!;
+    expect(MapData.decode(view.map, 10, 8).blocks({ side: 'left', col: 5, row: 7 })).toBe(true);
+
+    // Moving where nothing new comes into view doesn't touch the stored fog.
+    const spy = vi.spyOn(Store.prototype, 'updateScene');
+    const fogWrites = () => spy.mock.calls.filter(([, patch]) => patch.fog !== undefined).length;
+    playerSock.send({ type: 'token:move', tokenId: ana.id, col: 2, row: 1 });
+    await gmSock.until('scene', (m) => m.scene!.tokens.some((t) => t.id === ana.id && t.col === 2));
+    expect(fogWrites()).toBe(0);
+
+    // Opening the door reveals the other side; once closed again it stays explored, without the goblin.
+    gmSock.send({ type: 'door:toggle', sceneId, edge: door });
+    await playerSock.until('scene', (m) => m.scene!.tokens.length === 2);
+    expect(fogWrites()).toBe(1);
+    gmSock.send({ type: 'door:toggle', sceneId, edge: door });
+    view = (await playerSock.until('scene', (m) => m.scene!.tokens.length === 1)).scene!;
+    expect(fogWrites()).toBe(1);
+    spy.mockRestore();
+    expect(mask(view, 'fog').isRevealed(7, 1)).toBe(true);
+    expect(mask(view, 'visible').isRevealed(7, 1)).toBe(false);
+
+    // The GM can still paint: cells out of sight stay as painted, cells in sight are seen again.
+    gmSock.send({ type: 'fog:paint', sceneId, cells: [1 * 10 + 7, 1 * 10 + 1], reveal: false });
+    const painted = (await gmSock.until('scene', (m) => !mask(m.scene, 'fog').isRevealed(7, 1))).scene!;
+    expect(mask(painted, 'fog').isRevealed(1, 1)).toBe(true);
+    gmSock.send({ type: 'fog:paint', sceneId, cells: [7 * 10 + 9], reveal: true });
+    view = (await playerSock.until('scene', (m) => mask(m.scene, 'fog').isRevealed(9, 7))).scene!;
+    expect(mask(view, 'fog').isRevealed(7, 1)).toBe(false);
+    expect(names(view)).toEqual(['Ana']);
+    expect(goblin.col).toBe(6);
   });
 });
