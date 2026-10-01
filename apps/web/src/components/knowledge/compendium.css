@@ -285,7 +285,7 @@ kbd {
 .qs-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 70;
+  z-index: 95;
   background: rgb(0 0 0 / 0.45);
   animation: kb-fade 120ms ease-out;
 }
@@ -294,7 +294,7 @@ kbd {
   position: fixed;
   top: 12vh;
   left: 50%;
-  z-index: 71;
+  z-index: 96;
   display: flex;
   flex-direction: column;
   width: min(600px, calc(100vw - 24px));

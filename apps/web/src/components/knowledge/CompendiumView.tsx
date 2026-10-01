@@ -51,7 +51,10 @@ export function CompendiumView({ history }: { history: EntryHistoryApi }) {
       return next;
     });
 
-  const select = (e: IndexEntry) => history.go({ kind: e.kind, id: e.id });
+  const select = (e: IndexEntry) => {
+    history.go({ kind: e.kind, id: e.id });
+    setShowList(false);
+  };
 
   // ↑/↓ in the search box walk the results; Enter picks the first (or the highlighted) one.
   const onSearchKey = (e: KeyboardEvent<HTMLInputElement>) => {

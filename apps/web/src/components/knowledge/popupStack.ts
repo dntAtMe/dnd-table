@@ -138,9 +138,13 @@ export function closeTop(stack: PopupStack): PopupStack {
 /**
  * Closes hover previews the pointer has left: every unpinned popup except `keepId` and the popups
  * it was opened from. With null, closes every unpinned popup (e.g. a click elsewhere).
+ * `keepDescendants` also spares the previews opened from `keepId`, so a nested preview survives
+ * the trip across its parent popup (it still goes when another link there opens a preview, or
+ * when the pointer leaves the parent).
  */
-export function pruneHover(stack: PopupStack, keepId: number | null): PopupStack {
+export function pruneHover(stack: PopupStack, keepId: number | null, keepDescendants = false): PopupStack {
   const keep = new Set(lineage(stack, keepId).map((p) => p.id));
+  if (keepDescendants && keepId !== null) for (const d of descendants(stack, keepId)) keep.add(d);
   return without(
     stack,
     stack.items.filter((p) => !p.pinned && !keep.has(p.id)).map((p) => p.id),

@@ -56,7 +56,8 @@ interface Props {
  * behaviour for every EntityLink below the KnowledgeProvider.
  *
  * - Hover (mouse): resting on a link for 350 ms previews it beside the link. Moving into the
- *   preview keeps it open; leaving both closes it after a short grace period.
+ *   preview keeps it open; leaving both closes it after a short grace period. A nested preview
+ *   also stays while the pointer crosses its parent popup towards it.
  * - Pin: clicking a link (plain or Ctrl/Cmd), clicking inside a preview, its pin button or Space
  *   while a preview shows pins it. Pinned popups stay until closed (×, Escape for the topmost).
  *   A click elsewhere closes unpinned previews only.
@@ -88,11 +89,13 @@ export function PopupLayer({ onShow }: Props) {
   const cancelPrune = () => clearTimeout(pruneTimer.current);
   const schedulePrune = () => {
     clearTimeout(pruneTimer.current);
-    pruneTimer.current = setTimeout(() => setStack((s) => pruneHover(s, pointerIn.current)), LEAVE_GRACE);
+    pruneTimer.current = setTimeout(() => setStack((s) => pruneHover(s, pointerIn.current, true)), LEAVE_GRACE);
   };
 
   const handlers = useStableHandlers({
     hover(ref, anchor) {
+      // Bottom sheets cover the page (and the link), so on narrow screens links open on click only.
+      if (sheetRef.current) return;
       cancelPrune();
       clearTimeout(hoverTimer.current);
       hoverTimer.current = setTimeout(() => anchor.isConnected && openAt(ref, anchor, false), HOVER_DELAY);
