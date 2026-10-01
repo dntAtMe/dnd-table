@@ -171,6 +171,30 @@ const MIGRATIONS = [
   );
   CREATE INDEX tracks_by_campaign ON tracks (campaign_id, created_at);
   `,
+  `
+  CREATE TABLE wiki_pages (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    aliases TEXT NOT NULL DEFAULT '[]',
+    category TEXT NOT NULL,
+    tags TEXT NOT NULL DEFAULT '[]',
+    file_id TEXT REFERENCES files(id) ON DELETE SET NULL,
+    body TEXT NOT NULL DEFAULT '',
+    secret TEXT NOT NULL DEFAULT '',
+    audience TEXT NOT NULL DEFAULT 'gm' CHECK (audience IN ('gm', 'all', 'players')),
+    author_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT ${NOW},
+    updated_at TEXT NOT NULL DEFAULT ${NOW},
+    edited_at TEXT NOT NULL DEFAULT ${NOW}
+  );
+  CREATE UNIQUE INDEX wiki_pages_by_title ON wiki_pages (campaign_id, title COLLATE NOCASE);
+  CREATE TABLE wiki_recipients (
+    page_id TEXT NOT NULL REFERENCES wiki_pages(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (page_id, user_id)
+  );
+  `,
 ];
 
 export function openDb(file: string): DB {

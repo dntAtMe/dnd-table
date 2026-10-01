@@ -16,6 +16,7 @@ import {
   type ServerMessage,
   type Showcase,
   type Track,
+  type WikiPageView,
 } from '@dnd/protocol';
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 
@@ -58,6 +59,8 @@ export interface GameState {
   clockOffset: number;
   /** GM only: the soundboard. */
   tracks: Track[];
+  /** Campaign wiki pages this client may see (GMs: all, with secret notes). */
+  wiki: WikiPageView[];
   /** The latest one-shot sound effect, with a nonce so repeats re-trigger. */
   effect?: { url: string; volume: number; nonce: number };
   /** Latest GM framing (table displays only). */
@@ -94,6 +97,7 @@ const initial: GameState = {
   audio: { layers: [], volume: 1, serverTime: 0 },
   clockOffset: 0,
   tracks: [],
+  wiki: [],
 };
 
 let effectSeq = 0;
@@ -134,6 +138,7 @@ function reducer(state: GameState, action: Action): GameState {
             audio: msg.audio,
             clockOffset: msg.audio.serverTime - Date.now(),
             tracks: msg.tracks ?? [],
+            wiki: msg.wiki ?? [],
             effect: undefined,
             camera: undefined,
             unpairedCode: undefined,
@@ -171,6 +176,8 @@ function reducer(state: GameState, action: Action): GameState {
           return { ...state, audio: msg.audio, clockOffset: msg.audio.serverTime - Date.now() };
         case 'tracks':
           return { ...state, tracks: msg.tracks };
+        case 'wiki':
+          return { ...state, wiki: msg.pages };
         case 'audio:effect':
           return { ...state, effect: { url: msg.url, volume: msg.volume, nonce: ++effectSeq } };
         case 'display:unpaired':

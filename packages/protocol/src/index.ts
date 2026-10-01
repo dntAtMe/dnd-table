@@ -5,12 +5,14 @@ import { HandoutMessages, type HandoutServerMessage, type HandoutView, type Show
 import { MapMessages } from './map';
 import { TemplateMessages, type MapTemplate } from './templates';
 import { VisionMessages } from './vision';
+import { WikiMessages, type WikiPageView, type WikiServerMessage } from './wiki';
 
 export * from './audio';
 export * from './handouts';
 export * from './map';
 export * from './templates';
 export * from './vision';
+export * from './wiki';
 import { ABILITIES, CHARACTER_VERSION, CONDITION_IDS, MAX_EXHAUSTION, SKILL_IDS, type Character, type Grid, type HealthStatus, type LightSource, type RollResult, type SceneVision, type TokenSenses } from '@dnd/rules';
 
 export type Role = 'gm' | 'player';
@@ -402,6 +404,7 @@ export const ClientMessage = z.discriminatedUnion('type', [
   ...TemplateMessages,
   ...HandoutMessages,
   ...AudioMessages,
+  ...WikiMessages,
 ]);
 export type ClientMessage = z.infer<typeof ClientMessage>;
 
@@ -460,6 +463,8 @@ export interface Hello {
   audio: AudioState;
   /** Only sent to GMs: the soundboard. */
   tracks?: Track[];
+  /** Campaign wiki pages: GMs get every page; players those shared with them (no secret notes); table screens none. */
+  wiki: WikiPageView[];
 }
 
 export type ServerMessage =
@@ -477,7 +482,8 @@ export type ServerMessage =
   /** Sent to a table display that is not (or no longer) paired with a campaign. */
   | { type: 'display:unpaired'; code: string }
   | HandoutServerMessage
-  | AudioServerMessage;
+  | AudioServerMessage
+  | WikiServerMessage;
 
 /** WebSocket close codes used by the server. */
 export const CloseCode = {

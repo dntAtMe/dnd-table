@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { CampaignSummary, CharacterRecord, HandoutAudience, LogEntry, MapTemplate, Role, SceneSummary, Token, Track, TrackKind, User, Visibility } from '@dnd/protocol';
+import type { CampaignSummary, CharacterRecord, HandoutAudience, LogEntry, MapTemplate, Role, SceneSummary, Token, Track, TrackKind, User, Visibility, WikiAudience, WikiCategory } from '@dnd/protocol';
 import { DEFAULT_SCENE_VISION, type Character, type Grid, type SceneVision } from '@dnd/rules';
 import type { Encounter } from './combat';
 import type { DB } from './db';
@@ -67,6 +67,31 @@ export interface HandoutRecord {
 }
 
 type Row = Record<string, unknown>;
+
+/** A campaign wiki page as stored: the unfiltered source for every client's WikiPageView. */
+export interface WikiPageRecord {
+  id: string;
+  campaignId: string;
+  title: string;
+  aliases: string[];
+  category: WikiCategory;
+  tags: string[];
+  fileId: string | null;
+  imageUrl: string | null;
+  body: string;
+  secret: string;
+  audience: WikiAudience;
+  /** Recipients when audience is 'players'. */
+  userIds: string[];
+  authorName: string;
+  createdAt: string;
+  /** Last change players can see. */
+  updatedAt: string;
+  /** Last change of any kind, secret notes included. */
+  editedAt: string;
+}
+
+export type WikiPagePatch = Partial<Pick<WikiPageRecord, 'title' | 'aliases' | 'category' | 'tags' | 'fileId' | 'body' | 'secret' | 'audience' | 'userIds'>>;
 
 function isUniqueViolation(err: unknown): boolean {
   return err instanceof Error && /UNIQUE constraint failed/.test(err.message);
@@ -408,6 +433,109 @@ export class Store {
          ON CONFLICT (handout_id, user_id) DO UPDATE SET read_at = excluded.read_at`,
       )
       .run(handoutId, userId, stamp());
+  }
+
+  // ---------- wiki pages ----------
+
+  /** Every wiki page in the campaign, by title. */
+  wikiPages(campaignId: string): WikiPageRecord[] {
+    const rows = this.db.prepare(`${WIKI_SELECT} WHERE p.campaign_id = ? ORDER BY p.title COLLATE NOCASE`).all(campaignId) as Row[];
+    const recipients = new Map<string, string[]>();
+    const recipientRows = this.db
+      .prepare(`SELECT r.page_id, r.user_id FROM wiki_recipients r JOIN wiki_pages p ON p.id = r.page_id WHERE p.campaign_id = ? ORDER BY r.rowid`)
+      .all(campaignId) as Row[];
+    for (const r of recipientRows) {
+      const list = recipients.get(r.page_id as string) ?? [];
+      list.push(r.user_id as string);
+      recipients.set(r.page_id as string, list);
+    }
+    return rows.map((r) => Store.toWikiPage(r, recipients.get(r.id as string) ?? []));
+  }
+
+  getWikiPage(id: string): WikiPageRecord | undefined {
+    const row = this.db.prepare(`${WIKI_SELECT} WHERE p.id = ?`).get(id) as Row | undefined;
+    if (!row) return undefined;
+    const users = this.db.prepare('SELECT user_id FROM wiki_recipients WHERE page_id = ? ORDER BY rowid').all(id) as Row[];
+    return Store.toWikiPage(
+      row,
+      users.map((u) => u.user_id as string),
+    );
+  }
+
+  private static toWikiPage(row: Row, userIds: string[]): WikiPageRecord {
+    return {
+      id: row.id as string,
+      campaignId: row.campaign_id as string,
+      title: row.title as string,
+      aliases: JSON.parse(row.aliases as string) as string[],
+      category: row.category as WikiCategory,
+      tags: JSON.parse(row.tags as string) as string[],
+      fileId: (row.file_id as string | null) ?? null,
+      imageUrl: row.filename ? `/files/${row.filename as string}` : null,
+      body: row.body as string,
+      secret: row.secret as string,
+      audience: row.audience as WikiAudience,
+      userIds,
+      authorName: (row.author_name as string | null) ?? '',
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+      editedAt: row.edited_at as string,
+    };
+  }
+
+  createWikiPage(p: Required<WikiPagePatch> & { campaignId: string; authorUserId: string }): string {
+    const id = randomUUID();
+    const now = stamp();
+    this.db.exec('BEGIN');
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO wiki_pages (id, campaign_id, title, aliases, category, tags, file_id, body, secret, audience, author_user_id, created_at, updated_at, edited_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(id, p.campaignId, p.title, JSON.stringify(p.aliases), p.category, JSON.stringify(p.tags), p.fileId, p.body, p.secret, p.audience, p.authorUserId, now, now, now);
+      this.setWikiRecipients(id, p.userIds);
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+    return id;
+  }
+
+  /** `visible`: whether the change is one players can see (bumps updatedAt as well as editedAt). */
+  updateWikiPage(id: string, patch: WikiPagePatch, visible: boolean): void {
+    const now = stamp();
+    const sets: string[] = ['edited_at = ?'];
+    const values: (string | null)[] = [now];
+    if (visible) sets.push('updated_at = ?'), values.push(now);
+    if (patch.title !== undefined) sets.push('title = ?'), values.push(patch.title);
+    if (patch.aliases !== undefined) sets.push('aliases = ?'), values.push(JSON.stringify(patch.aliases));
+    if (patch.category !== undefined) sets.push('category = ?'), values.push(patch.category);
+    if (patch.tags !== undefined) sets.push('tags = ?'), values.push(JSON.stringify(patch.tags));
+    if (patch.fileId !== undefined) sets.push('file_id = ?'), values.push(patch.fileId);
+    if (patch.body !== undefined) sets.push('body = ?'), values.push(patch.body);
+    if (patch.secret !== undefined) sets.push('secret = ?'), values.push(patch.secret);
+    if (patch.audience !== undefined) sets.push('audience = ?'), values.push(patch.audience);
+    this.db.exec('BEGIN');
+    try {
+      this.db.prepare(`UPDATE wiki_pages SET ${sets.join(', ')} WHERE id = ?`).run(...values, id);
+      if (patch.userIds !== undefined) this.setWikiRecipients(id, patch.userIds);
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  private setWikiRecipients(pageId: string, userIds: string[]): void {
+    this.db.prepare('DELETE FROM wiki_recipients WHERE page_id = ?').run(pageId);
+    const insert = this.db.prepare('INSERT OR IGNORE INTO wiki_recipients (page_id, user_id) VALUES (?, ?)');
+    for (const userId of userIds) insert.run(pageId, userId);
+  }
+
+  deleteWikiPage(id: string): void {
+    this.db.prepare('DELETE FROM wiki_pages WHERE id = ?').run(id);
   }
 
   // ---------- soundboard ----------
@@ -798,6 +926,11 @@ function stamp(): string {
   lastStamp = Math.max(Date.now(), lastStamp + 1);
   return new Date(lastStamp).toISOString();
 }
+
+const WIKI_SELECT = `
+  SELECT p.id, p.campaign_id, p.title, p.aliases, p.category, p.tags, p.file_id, p.body, p.secret, p.audience,
+         p.created_at, p.updated_at, p.edited_at, f.filename, u.display_name AS author_name
+  FROM wiki_pages p LEFT JOIN files f ON f.id = p.file_id LEFT JOIN users u ON u.id = p.author_user_id`;
 
 const HANDOUT_SELECT = `
   SELECT h.id, h.campaign_id, h.title, h.text, h.file_id, h.audience, h.revised_at, h.created_at, f.filename

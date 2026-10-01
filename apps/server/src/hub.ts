@@ -36,6 +36,7 @@ import { GameError, applyGridPatch, clampToGrid, fogMask, summary } from './scen
 import type { Display, SceneRecord, Store } from './store';
 import { applyTemplateMessage, isTemplateMessage } from './templates';
 import { VisionTracker, isVisionMessage } from './vision';
+import { Wiki, isWikiMessage } from './wiki';
 
 const LOG_HISTORY = 100;
 const HEARTBEAT_MS = 30_000;
@@ -76,6 +77,7 @@ export class Hub {
   private readonly vision: VisionTracker<Conn>;
   private readonly handouts: Handouts<Conn>;
   private readonly audio: Soundboard<Conn>;
+  private readonly wiki: Wiki<Conn>;
 
   constructor(private readonly store: Store) {
     const host = {
@@ -84,6 +86,7 @@ export class Hub {
     };
     this.handouts = new Handouts<Conn>(store, host);
     this.audio = new Soundboard<Conn>(store, host);
+    this.wiki = new Wiki<Conn>(store, host);
     this.combat = new CombatTracker<Conn>(store, {
       broadcast: (campaignId, build) => {
         for (const conn of this.rooms.get(campaignId) ?? []) send(conn.socket, build(conn));
@@ -194,6 +197,7 @@ export class Hub {
       showcase: this.handouts.showcaseFor(conn),
       audio: this.audio.stateFor(conn.campaignId),
       ...(isGm && { tracks: this.audio.tracks(conn.campaignId) }),
+      wiki: this.wiki.viewFor(conn),
     });
   }
 
@@ -574,6 +578,7 @@ export class Hub {
     }
     if (isHandoutMessage(msg)) return this.handouts.handle(conn, msg);
     if (isAudioMessage(msg)) return this.audio.handle(conn, msg);
+    if (isWikiMessage(msg)) return this.wiki.handle(conn, msg);
     switch (msg.type) {
       case 'roll': {
         const roll = rollDice(msg.expr);
