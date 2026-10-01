@@ -1,5 +1,6 @@
 import { KIND_LABELS, type EntryKind, type EntryRef } from '@dnd/rules';
 import type { ReactNode } from 'react';
+import { RelatedSection } from './Related';
 import { useKnowledge } from '../../lib/knowledge';
 import { BUILTIN_BODIES, SUMMARY_IN_BODY, SummaryBody } from './EntryBodies';
 import { useEntryRenderer } from './renderers';
@@ -56,6 +57,7 @@ export function EntryCard({ entryRef, size = 'popup', actions, hideOpen = size =
       </header>
       <div className="kb-card__body">
         <Body entry={entry} size={size} />
+        <RelatedSection entryRef={entry} size={size} />
       </div>
       {!hideOpen && (
         <footer className="kb-card__foot">
