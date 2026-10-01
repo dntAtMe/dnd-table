@@ -1569,6 +1569,35 @@ label {
   fill: rgb(20 14 30 / 0.55);
 }
 
+/* Lighting and vision: out of sight (explored but not seen now), dim light, and the GM's light overlay. */
+.vision__unseen {
+  fill: rgb(8 6 5 / 0.62);
+}
+
+.vision__dim {
+  fill: rgb(10 12 30 / 0.28);
+}
+
+.vision__dim--gm {
+  fill: rgb(10 12 30 / 0.14);
+}
+
+.vision__dark--gm {
+  fill: rgb(10 12 30 / 0.3);
+}
+
+.vision__reach {
+  fill: none;
+}
+
+.vision__reach--bright {
+  stroke: rgb(255 196 92 / 0.75);
+}
+
+.vision__reach--dim {
+  stroke: rgb(255 196 92 / 0.4);
+}
+
 .token__disc {
   stroke: rgb(255 255 255 / 0.85);
   stroke-width: 2;

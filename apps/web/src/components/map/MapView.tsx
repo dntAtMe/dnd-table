@@ -21,6 +21,7 @@ import { TokenDecor, type TokenDecoration } from '../combat/TokenDecor';
 import { fitRect, screenToMap, visibleRect, zoomAt, type Camera } from './camera';
 import { fogPath } from './fogPath';
 import { TerrainLayer, TerrainPatterns, WallLayer } from './MapFeatures';
+import { VisionLayer } from './VisionLayer';
 import { edgeKey, edgesBetween, nearestEdge, nearestVertex, parseEdgeKey, type Vertex } from './wallPath';
 
 export type MapTool = 'move' | 'reveal' | 'hide' | 'ruler' | 'ping' | 'wall' | 'door' | 'terrain' | 'erase';
@@ -604,6 +605,7 @@ export function MapView({
             {fog && (
               <path d={fogD} className={`map__fog${isGm ? ' map__fog--gm' : ''}`} clipPath={`url(#clip-${scene.id})`} pointerEvents="none" />
             )}
+            <VisionLayer scene={scene} map={map} geo={geo} size={grid.size} isGm={isGm} k={k} clipPath={`url(#clip-${scene.id})`} />
             {drag && (
               <rect
                 className={`map__drop${dragMove?.block ? ' map__drop--blocked' : ''}`}
