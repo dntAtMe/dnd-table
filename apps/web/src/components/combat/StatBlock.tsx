@@ -22,6 +22,7 @@ import {
 } from '@dnd/rules';
 import { useState } from 'react';
 import { signed } from '../character/useCharacter';
+import { RichText } from '../knowledge/RichText';
 import './combat.css';
 
 type Send = (msg: ClientMessage) => void;
@@ -164,11 +165,11 @@ export function StatBlock({ monster: m, name = m.name, send }: Props) {
           </span>
         </div>
       )}
-      {m.vulnerabilities.length > 0 && <Line label="Vulnerabilities" text={m.vulnerabilities.map(cap).join(', ')} />}
-      {m.resistances.length > 0 && <Line label="Resistances" text={m.resistances.map(cap).join(', ')} />}
-      {m.immunities.length > 0 && <Line label="Immunities" text={m.immunities.map(cap).join(', ')} />}
-      {m.conditionImmunities.length > 0 && <Line label="Condition Immunities" text={m.conditionImmunities.map(cap).join(', ')} />}
-      {m.gear && <Line label="Gear" text={m.gear} />}
+      {m.vulnerabilities.length > 0 && <Line label="Vulnerabilities" text={linkList('damage-type', m.vulnerabilities)} rich />}
+      {m.resistances.length > 0 && <Line label="Resistances" text={linkList('damage-type', m.resistances)} rich />}
+      {m.immunities.length > 0 && <Line label="Immunities" text={linkList('damage-type', m.immunities)} rich />}
+      {m.conditionImmunities.length > 0 && <Line label="Condition Immunities" text={linkList('condition', m.conditionImmunities)} rich />}
+      {m.gear && <Line label="Gear" text={m.gear} rich />}
       <Line label="Senses" text={senses} />
       <Line label="Languages" text={m.languages} />
       <Line label="CR" text={monsterCrText(m)} />
@@ -178,7 +179,7 @@ export function StatBlock({ monster: m, name = m.name, send }: Props) {
           <section key={key} className="statblock__section">
             <h4>{title}</h4>
             {m[key].map((a) => (
-              <ActionEntry key={a.name} action={a} onD20={rollD20} onDamage={rollDamage} />
+              <ActionEntry key={a.name} action={a} monsterId={m.id} onD20={rollD20} onDamage={rollDamage} />
             ))}
           </section>
         ) : null,
@@ -187,21 +188,27 @@ export function StatBlock({ monster: m, name = m.name, send }: Props) {
   );
 }
 
-function Line({ label, text }: { label: string; text: string }) {
+/** Explicit knowledge base links ("[[condition:charmed|Charmed]], …") for lowercase id lists. */
+function linkList(kind: 'damage-type' | 'condition', ids: string[]): string {
+  return ids.map((id) => `[[${kind}:${id.toLowerCase()}|${cap(id)}]]`).join(', ');
+}
+
+function Line({ label, text, rich = false }: { label: string; text: string; rich?: boolean }) {
   return (
     <p className="statblock__line">
-      <strong>{label}</strong> {text}
+      <strong>{label}</strong> {rich ? <RichText text={text} inline /> : text}
     </p>
   );
 }
 
 interface ActionProps {
   action: MonsterAction;
+  monsterId: string;
   onD20: (label: string, bonus: number) => void;
   onDamage: (label: string, damage: readonly MonsterDamage[], crit?: boolean) => void;
 }
 
-function ActionEntry({ action: a, onD20, onDamage }: ActionProps) {
+function ActionEntry({ action: a, monsterId, onD20, onDamage }: ActionProps) {
   const attack = a.attack;
   const save = a.save;
   return (
@@ -211,7 +218,7 @@ function ActionEntry({ action: a, onD20, onDamage }: ActionProps) {
           {a.name}
           {a.usage && ` (${a.usage})`}.
         </strong>{' '}
-        {a.description}
+        <RichText text={a.description} self={{ kind: 'monster', id: monsterId }} inline />
       </p>
       {(attack || save?.damage) && (
         <div className="statblock__rolls">
