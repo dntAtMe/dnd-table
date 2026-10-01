@@ -27,7 +27,9 @@ import { useAmbientAudio, useAudioPrefs } from '../components/audio/useAmbientAu
 import { HandoutsPanel, ShowcaseStatus } from '../components/handouts/HandoutsPanel';
 import { ShowcaseOverlay, useHandoutNotice, usePlayerShowcase } from '../components/handouts/Showcase';
 import { WikiPanel } from '../components/wiki/WikiPanel';
+import { PageEntryBody } from '../components/wiki/PageEntryBody';
 import { useWikiOpenRequest, useWikiSync, useWikiUnreadCount } from '../components/wiki/wikiStore';
+import { registerEntryRenderer } from '../components/knowledge/renderers';
 import { CompendiumView } from '../components/knowledge/CompendiumView';
 import { useEntryHistory } from '../components/knowledge/history';
 import { PopupLayer } from '../components/knowledge/PopupLayer';
@@ -177,6 +179,8 @@ export function Campaign({ user }: { user: User }) {
   useWikiSync({ campaignId: hello?.campaign.id ?? null, pages: state.wiki, isGm, userId: hello?.you.userId, members: state.members, send });
   const unreadWiki = useWikiUnreadCount();
   const wikiRequest = useWikiOpenRequest();
+  // Campaign pages render with the wiki's own view in popups and the Compendium.
+  useEffect(() => registerEntryRenderer('page', PageEntryBody), []);
   useEffect(() => {
     if (wikiRequest) setTab('wiki');
   }, [wikiRequest]);
@@ -380,12 +384,15 @@ export function Campaign({ user }: { user: User }) {
             Handouts
             {unreadHandouts > 0 && <span className="center-switch__unread" aria-label={`${unreadHandouts} unread`}>{unreadHandouts}</span>}
           </button>
-          <button type="button" role="tab" aria-selected={tab === 'compendium'} className={tab === 'compendium' ? 'is-active' : ''} onClick={() => setTab('compendium')}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'compendium' || tab === 'wiki'}
+            className={tab === 'compendium' || tab === 'wiki' ? 'is-active' : ''}
+            onClick={() => setTab(tab === 'wiki' ? 'wiki' : 'compendium')}
+          >
             Compendium
-          </button>
-          <button type="button" role="tab" aria-selected={tab === 'wiki'} className={tab === 'wiki' ? 'is-active' : ''} onClick={() => setTab('wiki')}>
-            Wiki
-            {unreadWiki > 0 && <span className="center-switch__unread" aria-label={`${unreadWiki} new`}>{unreadWiki}</span>}
+            {unreadWiki > 0 && <span className="center-switch__unread" aria-label={`${unreadWiki} new wiki pages`}>{unreadWiki}</span>}
           </button>
         </div>
         <main className="campaign__map" data-tab="map">
@@ -522,10 +529,12 @@ export function Campaign({ user }: { user: User }) {
         </section>
         <section className="campaign__compendium" data-tab="compendium">
           <MobileSwitch tab={tab} setTab={setTab} live={Boolean(combat)} unread={unreadHandouts} />
+          <KnowledgeModes tab={tab} setTab={setTab} unreadWiki={unreadWiki} />
           <CompendiumView history={compendiumHistory} />
         </section>
         <section className="campaign__wiki" data-tab="wiki">
           <MobileSwitch tab={tab} setTab={setTab} live={Boolean(combat)} unread={unreadHandouts} />
+          <KnowledgeModes tab={tab} setTab={setTab} unreadWiki={unreadWiki} />
           <WikiPanel active={tab === 'wiki'} />
         </section>
         </div>
@@ -600,7 +609,7 @@ export function Campaign({ user }: { user: User }) {
 function MobileSwitch({ tab, setTab, live, unread }: { tab: Tab; setTab: (t: Tab) => void; live: boolean; unread: number }) {
   const unreadWiki = useWikiUnreadCount();
   return (
-    <div className="segmented segmented--full mobile-switch" role="tablist" aria-label="Sheet, combat, handouts, compendium or wiki">
+    <div className="segmented segmented--full mobile-switch" role="tablist" aria-label="Sheet, combat, handouts or compendium">
       <button type="button" role="tab" aria-selected={tab === 'sheet'} className={tab === 'sheet' ? 'is-active' : ''} onClick={() => setTab('sheet')}>
         Sheet
       </button>
@@ -612,20 +621,32 @@ function MobileSwitch({ tab, setTab, live, unread }: { tab: Tab; setTab: (t: Tab
         Handouts
         {unread > 0 && <span className="center-switch__unread" aria-label={`${unread} unread`}>{unread}</span>}
       </button>
-      <button type="button" role="tab" aria-selected={tab === 'wiki'} className={tab === 'wiki' ? 'is-active' : ''} onClick={() => setTab('wiki')}>
-        Wiki
-        {unreadWiki > 0 && <span className="center-switch__unread" aria-label={`${unreadWiki} new`}>{unreadWiki}</span>}
-      </button>
       <button
         type="button"
         role="tab"
-        aria-selected={tab === 'compendium'}
-        aria-label="Compendium"
+        aria-selected={tab === 'compendium' || tab === 'wiki'}
+        aria-label={unreadWiki > 0 ? `Compendium, ${unreadWiki} new wiki pages` : 'Compendium'}
         title="Compendium"
-        className={`mobile-switch__icon${tab === 'compendium' ? ' is-active' : ''}`}
-        onClick={() => setTab('compendium')}
+        className={`mobile-switch__icon${tab === 'compendium' || tab === 'wiki' ? ' is-active' : ''}`}
+        onClick={() => setTab(tab === 'wiki' ? 'wiki' : 'compendium')}
       >
         <BookIcon />
+        {unreadWiki > 0 && <span className="center-switch__live" aria-hidden="true" />}
+      </button>
+    </div>
+  );
+}
+
+/** The Compendium's two modes: searching rules and visible pages, or managing the campaign wiki. */
+function KnowledgeModes({ tab, setTab, unreadWiki }: { tab: Tab; setTab: (t: Tab) => void; unreadWiki: number }) {
+  return (
+    <div className="segmented knowledge-modes" role="tablist" aria-label="Compendium mode">
+      <button type="button" role="tab" aria-selected={tab === 'compendium'} className={tab === 'compendium' ? 'is-active' : ''} onClick={() => setTab('compendium')}>
+        Search
+      </button>
+      <button type="button" role="tab" aria-selected={tab === 'wiki'} className={tab === 'wiki' ? 'is-active' : ''} onClick={() => setTab('wiki')}>
+        Campaign wiki
+        {unreadWiki > 0 && <span className="center-switch__unread" aria-label={`${unreadWiki} new`}>{unreadWiki}</span>}
       </button>
     </div>
   );

@@ -1,6 +1,6 @@
 import { WIKI_CATEGORY_LABELS, type Member } from '@dnd/protocol';
 import { parseRefKey, type EntryRef } from '@dnd/rules';
-import { useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useMemo, type MouseEvent } from 'react';
 import { useLinkedText } from '../../lib/knowledge';
 import { RichText } from '../knowledge/RichText';
 import { openWikiPage, useCreatePageFromLink, useWiki, useWikiBacklinks, type WikiPage } from './wikiStore';
@@ -114,15 +114,14 @@ export function WikiPageView({ page, compact = false, onNavigate, onEdit, onTag 
 
 /**
  * Page text with knowledge base links (RichText), plus wiki behaviour layered on top: with
- * `onNavigate`, plain clicks on page links navigate (otherwise links behave as anywhere else), and
- * the GM can click a broken [[link]] to create that page.
+ * `onNavigate`, plain clicks on page links navigate (otherwise links behave as anywhere else).
+ * Broken [[links]] offer the GM "Create page" through RichText's BrokenLink; the list below the
+ * text gives the same for keyboard users.
  */
 function WikiBody({ text, self, onNavigate }: { text: string; self: EntryRef; onNavigate?: (pageId: string) => void }) {
   const segments = useLinkedText(text, self);
   const broken = useMemo(() => segments.filter((s) => s.broken).map((s) => s.target ?? s.text), [segments]);
   const create = useCreatePageFromLink();
-  const [prompt, setPrompt] = useState<string | null>(null);
-  const box = useRef<HTMLDivElement>(null);
 
   const onClickCapture = (e: MouseEvent) => {
     const el = e.target as HTMLElement;
@@ -136,38 +135,13 @@ function WikiBody({ text, self, onNavigate }: { text: string; self: EntryRef; on
         return;
       }
     }
-    const missing = el.closest('.entity-link--broken');
-    if (missing && create && box.current) {
-      // RichText renders segments in order, so the nth broken link is the nth broken segment.
-      const index = [...box.current.querySelectorAll('.entity-link--broken')].indexOf(missing);
-      const name = broken[index];
-      if (name) setPrompt(name);
-    }
   };
 
   const unique = useMemo(() => [...new Map(broken.map((n) => [n.toLowerCase(), n])).values()], [broken]);
 
   return (
-    <div ref={box} className={`wiki-body ${create ? 'wiki-body--gm' : 'wiki-body--reader'}`} onClickCapture={onClickCapture}>
+    <div className={`wiki-body ${create ? 'wiki-body--gm' : 'wiki-body--reader'}`} onClickCapture={onClickCapture}>
       <RichText text={text} self={self} className="wiki-text" />
-      {create && prompt && (
-        <div className="wiki-create-prompt" role="dialog" aria-label="Create page">
-          <span>No page called "{prompt}" yet.</span>
-          <button
-            type="button"
-            className="btn btn--sm btn--primary"
-            onClick={() => {
-              create(prompt);
-              setPrompt(null);
-            }}
-          >
-            Create page
-          </button>
-          <button type="button" className="btn btn--sm btn--ghost" onClick={() => setPrompt(null)}>
-            Cancel
-          </button>
-        </div>
-      )}
       {create && unique.length > 0 && (
         <p className="wiki-missing">
           <span className="hint">Links to missing pages:</span>

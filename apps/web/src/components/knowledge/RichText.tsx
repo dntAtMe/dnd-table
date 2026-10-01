@@ -1,6 +1,7 @@
 import type { EntryRef } from '@dnd/rules';
 import { Fragment } from 'react';
 import { useLinkedText } from '../../lib/knowledge';
+import { BrokenLink } from '../wiki/BrokenLink';
 import { EntityLink } from './EntityLink';
 
 interface Props {
@@ -27,9 +28,16 @@ export function RichText({ text, self, className = '', inline = false, hoverOnly
         {seg.text}
       </EntityLink>
     ) : seg.broken ? (
-      <span key={i} className="entity-link entity-link--broken" title="No page with this name">
-        {seg.text}
-      </span>
+      // Inside buttons (hoverOnly) a nested button isn't allowed, so only offer "Create page" elsewhere.
+      hoverOnly ? (
+        <span key={i} className="entity-link entity-link--broken" title="No page with this name">
+          {seg.text}
+        </span>
+      ) : (
+        <BrokenLink key={i} name={seg.target ?? seg.text}>
+          {seg.text}
+        </BrokenLink>
+      )
     ) : (
       <Fragment key={i}>{formatPlain(seg.text, i)}</Fragment>
     ),

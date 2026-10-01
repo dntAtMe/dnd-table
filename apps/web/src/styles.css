@@ -3393,3 +3393,14 @@ textarea:focus {
 .entry__text .rich-text {
   white-space: inherit;
 }
+
+.knowledge-modes {
+  align-self: flex-start;
+  margin: 10px 16px 0;
+}
+
+/* Campaign pages inside knowledge cards: the card header already shows the title. */
+.kb-card--page .kb-card__summary,
+.kb-card--page .wiki-page__title {
+  display: none;
+}
