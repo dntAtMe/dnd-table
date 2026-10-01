@@ -154,3 +154,18 @@
   align-items: center;
   gap: 6px;
 }
+
+/* Spell details next to the spell picker (a knowledge base link). */
+.entity-link.template-options__info {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-style: italic;
+  font-weight: 700;
+  text-decoration: none;
+}

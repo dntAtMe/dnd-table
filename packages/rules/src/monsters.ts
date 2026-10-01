@@ -48,3 +48,23 @@ export function describeDamage(damage: readonly MonsterDamage[]): string {
     .map((d) => `${d.average}${d.dice === String(d.average) ? '' : ` (${d.dice})`} ${d.type[0]!.toUpperCase()}${d.type.slice(1)}`)
     .join(' plus ');
 }
+
+const capWord = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
+
+/** "30 ft., Climb 40 ft., Fly 80 ft. (hover)" */
+export function monsterSpeedText(m: Pick<MonsterDef, 'speed' | 'hover'>): string {
+  return Object.entries(m.speed)
+    .map(([k, v]) => (k === 'walk' ? `${v} ft.` : `${capWord(k)} ${v} ft.${k === 'fly' && m.hover ? ' (hover)' : ''}`))
+    .join(', ');
+}
+
+/** "Darkvision 60 ft., Passive Perception 9" */
+export function monsterSensesText(m: Pick<MonsterDef, 'senses' | 'passivePerception'>): string {
+  return [...Object.entries(m.senses).map(([k, v]) => `${capWord(k)} ${v}`), `Passive Perception ${m.passivePerception}`].join(', ');
+}
+
+/** "1/4 (XP 50; PB +2)", "17 (XP 18,000, or 20,000 in lair; PB +6)" */
+export function monsterCrText(m: Pick<MonsterDef, 'cr' | 'xp' | 'xpInLair' | 'profBonus'>): string {
+  const lair = m.xpInLair ? `, or ${m.xpInLair.toLocaleString('en-US')} in lair` : '';
+  return `${formatCr(m.cr)} (XP ${m.xp.toLocaleString('en-US')}${lair}; PB +${m.profBonus})`;
+}

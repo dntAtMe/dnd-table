@@ -1,6 +1,7 @@
 import type { ClientMessage, CombatView, CombatantView } from '@dnd/protocol';
 import { CONDITIONS, CONDITION_IDS, type ConditionId } from '@dnd/rules';
 import { useEffect, useState, type FormEvent } from 'react';
+import { EntityLink, MaybeLink } from '../knowledge/EntityLink';
 import { STATUS_LABEL } from './InitiativeStrip';
 import './combat.css';
 
@@ -84,14 +85,18 @@ export function InitiativeTracker({ combat, isGm, userId, send, selectedId, onSe
                     aria-expanded={canControl ? expanded : undefined}
                   >
                     <span className="combatant__name">
-                      {c.name}
+                      <MaybeLink entry={c.monsterId ? { kind: 'monster', id: c.monsterId } : null} hoverOnly>
+                        {c.name}
+                      </MaybeLink>
                       {c.hidden && <span className="badge badge--hidden">Hidden</span>}
                     </span>
                     {c.conditions.length > 0 && (
                       <span className="combatant__conditions">
                         {c.conditions.map((id) => (
-                          <span key={id} className="combatant__condition" title={CONDITIONS[id as ConditionId]?.summary}>
-                            {CONDITIONS[id as ConditionId]?.name ?? id}
+                          <span key={id} className="combatant__condition">
+                            <MaybeLink entry={{ kind: 'condition', id }} hoverOnly>
+                              {CONDITIONS[id as ConditionId]?.name ?? id}
+                            </MaybeLink>
                           </span>
                         ))}
                       </span>
@@ -173,7 +178,9 @@ export function CombatantCard({ combatant: c, send }: { combatant: CombatantView
       <div className="combatant__row">
         <span className="combatant__init">{c.initiative ?? '–'}</span>
         <span className="combatant__main">
-          <span className="combatant__name">{c.name}</span>
+          <span className="combatant__name">
+            <MaybeLink entry={c.monsterId ? { kind: 'monster', id: c.monsterId } : null}>{c.name}</MaybeLink>
+          </span>
         </span>
         {c.ac != null && (
           <span className="combatant__ac" title="Armor Class">
@@ -232,7 +239,9 @@ function CombatantControls({ combatant: c, isGm, send }: { combatant: CombatantV
               title={CONDITIONS[id].summary}
               onClick={() => send({ type: 'combat:condition', combatantId: c.id, condition: id, on: !on })}
             >
-              {CONDITIONS[id].name}
+              <EntityLink entry={{ kind: 'condition', id }} hoverOnly>
+                {CONDITIONS[id].name}
+              </EntityLink>
             </button>
           );
         })}

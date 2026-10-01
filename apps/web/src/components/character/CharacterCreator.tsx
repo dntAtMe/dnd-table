@@ -30,11 +30,17 @@ import {
   speciesSkillOptions,
   weaponMasteryCount,
   type Ability,
+  GEAR,
+  RULES_TEXT,
   type CreatorChoices,
+  type EntryRef,
   type EquipmentChoice,
   type Skill,
 } from '@dnd/rules';
-import { useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useMemo, useState, type ReactNode } from 'react';
+import { useKnowledge } from '../../lib/knowledge';
+import { MaybeLink } from '../knowledge/EntityLink';
+import { RichText } from '../knowledge/RichText';
 import { TOKEN_COLORS } from '../TokenPanels';
 import { signed } from './useCharacter';
 
@@ -52,14 +58,64 @@ const STEPS: { id: Step; label: string }[] = [
 
 const cap = (s: string) => s[0]!.toUpperCase() + s.slice(1);
 
-function ChoiceCard({ selected, onClick, title, children }: { selected: boolean; onClick: () => void; title: string; children: ReactNode }) {
+function ChoiceCard({
+  selected,
+  onClick,
+  title,
+  entry,
+  children,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  title: string;
+  /** Knowledge base entry: the title previews it on hover (Ctrl/Cmd-click pins it). */
+  entry?: EntryRef;
+  children: ReactNode;
+}) {
   return (
     <button type="button" className={`choice-card${selected ? ' is-selected' : ''}`} onClick={onClick} aria-pressed={selected}>
-      <span className="choice-card__title">{title}</span>
+      <span className="choice-card__title">
+        <MaybeLink entry={entry} hoverOnly>
+          {title}
+        </MaybeLink>
+      </span>
       {children}
     </button>
   );
 }
+
+/** Hover-only links in a comma-separated list (inside buttons and labels). */
+function QuietLinks({ items }: { items: { entry: EntryRef | null; label: string }[] }) {
+  return (
+    <>
+      {items.map((it, i) => (
+        <Fragment key={`${it.label}-${i}`}>
+          {i > 0 && ', '}
+          <MaybeLink entry={it.entry} hoverOnly>
+            {it.label}
+          </MaybeLink>
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+/** A standard language's name, previewing its entry. */
+function LanguageName({ name }: { name: string }) {
+  const { compendium } = useKnowledge();
+  const e = compendium.byName(name, 'language');
+  return (
+    <MaybeLink entry={e?.kind === 'language' ? { kind: 'language', id: e.id } : null} hoverOnly>
+      {name}
+    </MaybeLink>
+  );
+}
+
+const skillLabel = (s: Skill) => (
+  <MaybeLink entry={{ kind: 'skill', id: s }} hoverOnly>
+    {SKILLS[s].name}
+  </MaybeLink>
+);
 
 function Checklist<T extends string>({
   options,
@@ -73,7 +129,7 @@ function Checklist<T extends string>({
   selected: T[];
   limit: number;
   onChange: (next: T[]) => void;
-  label: (o: T) => string;
+  label: (o: T) => ReactNode;
   disabled?: (o: T) => string | undefined;
 }) {
   return (
@@ -150,6 +206,7 @@ export function CharacterCreator({ send, onDone }: { send: (msg: ClientMessage) 
               <ChoiceCard
                 key={cls.id}
                 title={cls.name}
+                entry={{ kind: 'class', id: cls.id }}
                 selected={c.classId === cls.id}
                 onClick={() =>
                   set({
@@ -182,15 +239,21 @@ export function CharacterCreator({ send, onDone }: { send: (msg: ClientMessage) 
                 <ChoiceCard
                   key={bg.id}
                   title={bg.name}
+                  entry={{ kind: 'background', id: bg.id }}
                   selected={c.backgroundId === bg.id}
                   onClick={() => set({ backgroundId: bg.id, backgroundBonus: {}, backgroundEquipment: [], classSkills: c.classSkills.filter((s) => !bg.skills.includes(s)) })}
                 >
                   <span className="choice-card__meta">{bg.abilities.map((a) => a.toUpperCase()).join(', ')}</span>
                   <span className="choice-card__line">
-                    Feat: {FEATS[bg.feat.id]?.name}
+                    Feat:{' '}
+                    <MaybeLink entry={{ kind: 'feat', id: bg.feat.id }} hoverOnly>
+                      {FEATS[bg.feat.id]?.name}
+                    </MaybeLink>
                     {bg.feat.note ? ` (${bg.feat.note})` : ''}
                   </span>
-                  <span className="choice-card__line">Skills: {bg.skills.map((s) => SKILLS[s].name).join(', ')}</span>
+                  <span className="choice-card__line">
+                    Skills: <QuietLinks items={bg.skills.map((s) => ({ entry: { kind: 'skill', id: s }, label: SKILLS[s].name }))} />
+                  </span>
                   <span className="choice-card__line">Tools: {bg.tools?.join(', ') ?? bg.toolChoice ?? 'None'}</span>
                 </ChoiceCard>
               ))}
@@ -198,8 +261,16 @@ export function CharacterCreator({ send, onDone }: { send: (msg: ClientMessage) 
             {BACKGROUNDS[c.backgroundId] && <BackgroundBonus c={c} set={set} />}
             {FEATS[BACKGROUNDS[c.backgroundId]?.feat.id ?? ''] && (
               <details className="rules-text">
-                <summary>{FEATS[BACKGROUNDS[c.backgroundId]!.feat.id]!.name}</summary>
-                <p className="prose">{FEATS[BACKGROUNDS[c.backgroundId]!.feat.id]!.description}</p>
+                <summary>
+                  <MaybeLink entry={{ kind: 'feat', id: BACKGROUNDS[c.backgroundId]!.feat.id }} hoverOnly>
+                    {FEATS[BACKGROUNDS[c.backgroundId]!.feat.id]!.name}
+                  </MaybeLink>
+                </summary>
+                <RichText
+                  text={FEATS[BACKGROUNDS[c.backgroundId]!.feat.id]!.description}
+                  self={{ kind: 'feat', id: BACKGROUNDS[c.backgroundId]!.feat.id }}
+                  className="prose"
+                />
               </details>
             )}
           </>
@@ -240,8 +311,14 @@ export function CharacterCreator({ send, onDone }: { send: (msg: ClientMessage) 
                 <div>
                   <h3>{preview.character.name}</h3>
                   <p className="muted">
-                    Level 1 {(c.subspeciesId && SUBSPECIES[c.subspeciesId]?.name.split(': ').pop()) || SPECIES[c.speciesId]?.name}{' '}
-                    {CLASSES[c.classId]?.name} · {BACKGROUNDS[c.backgroundId]?.name}
+                    Level 1{' '}
+                    {c.subspeciesId && SUBSPECIES[c.subspeciesId] ? (
+                      <MaybeLink entry={{ kind: 'lineage', id: c.subspeciesId }}>{SUBSPECIES[c.subspeciesId]!.name.split(': ').pop()}</MaybeLink>
+                    ) : (
+                      <MaybeLink entry={{ kind: 'species', id: c.speciesId }}>{SPECIES[c.speciesId]?.name}</MaybeLink>
+                    )}{' '}
+                    <MaybeLink entry={{ kind: 'class', id: c.classId }}>{CLASSES[c.classId]?.name}</MaybeLink> ·{' '}
+                    <MaybeLink entry={{ kind: 'background', id: c.backgroundId }}>{BACKGROUNDS[c.backgroundId]?.name}</MaybeLink>
                   </p>
                 </div>
               </div>
@@ -395,13 +472,16 @@ function SpeciesStep({ c, set }: { c: CreatorChoices; set: (p: Partial<CreatorCh
           <ChoiceCard
             key={s.id}
             title={s.name}
+            entry={{ kind: 'species', id: s.id }}
             selected={c.speciesId === s.id}
             onClick={() => set({ speciesId: s.id, subspeciesId: null, size: s.sizes.length === 1 ? s.sizes[0]! : '', speciesSkill: null, versatileFeat: null })}
           >
             <span className="choice-card__meta">
               {s.sizes.join(' or ')} · {s.speed} ft
             </span>
-            <span className="choice-card__line">{s.traits.map((t) => TRAITS[t]?.name ?? t).join(', ')}</span>
+            <span className="choice-card__line">
+              <QuietLinks items={s.traits.map((t) => ({ entry: { kind: 'trait', id: t }, label: TRAITS[t]?.name ?? t }))} />
+            </span>
           </ChoiceCard>
         ))}
       </div>
@@ -464,8 +544,12 @@ function SpeciesStep({ c, set }: { c: CreatorChoices; set: (p: Partial<CreatorCh
             {[...species.traits, ...(c.subspeciesId ? (SUBSPECIES[c.subspeciesId]?.traits.map((t) => t.id) ?? []) : [])].map((t) => (
               <li key={t}>
                 <details>
-                  <summary>{TRAITS[t]?.name}</summary>
-                  <p className="prose">{TRAITS[t]?.description}</p>
+                  <summary>
+                    <MaybeLink entry={{ kind: 'trait', id: t }} hoverOnly>
+                      {TRAITS[t]?.name}
+                    </MaybeLink>
+                  </summary>
+                  <RichText text={TRAITS[t]?.description ?? ''} self={{ kind: 'trait', id: t }} className="prose" />
                 </details>
               </li>
             ))}
@@ -632,7 +716,7 @@ function DetailsStep({ c, set }: { c: CreatorChoices; set: (p: Partial<CreatorCh
             selected={c.classSkills}
             limit={cls.skillChoice.choose}
             onChange={(classSkills) => set({ classSkills, expertise: c.expertise.filter((s) => [...classSkills, ...fromBackground, c.speciesSkill].includes(s)) })}
-            label={(s) => SKILLS[s].name}
+            label={skillLabel}
             disabled={(s) => (fromBackground.has(s) ? 'from background' : c.speciesSkill === s ? 'from species' : undefined)}
           />
         </section>
@@ -643,7 +727,7 @@ function DetailsStep({ c, set }: { c: CreatorChoices; set: (p: Partial<CreatorCh
           <h3>
             Expertise: choose {expertise} ({c.expertise.length}/{expertise})
           </h3>
-          <Checklist options={chosenSkills(c)} selected={c.expertise} limit={expertise} onChange={(e) => set({ expertise: e })} label={(s) => SKILLS[s].name} />
+          <Checklist options={chosenSkills(c)} selected={c.expertise} limit={expertise} onChange={(e) => set({ expertise: e })} label={skillLabel} />
         </section>
       )}
 
@@ -652,8 +736,10 @@ function DetailsStep({ c, set }: { c: CreatorChoices; set: (p: Partial<CreatorCh
           <h3>Fighting Style</h3>
           <div className="choice-grid choice-grid--compact">
             {fightingStyles.map((f) => (
-              <ChoiceCard key={f.id} title={f.name} selected={c.fightingStyle === f.id} onClick={() => set({ fightingStyle: f.id })}>
-                <span className="choice-card__line">{f.description.split('\n')[0]}</span>
+              <ChoiceCard key={f.id} title={f.name} entry={{ kind: 'feat', id: f.id }} selected={c.fightingStyle === f.id} onClick={() => set({ fightingStyle: f.id })}>
+                <span className="choice-card__line">
+                  <RichText text={f.description.split('\n')[0]!} self={{ kind: 'feat', id: f.id }} inline hoverOnly />
+                </span>
               </ChoiceCard>
             ))}
           </div>
@@ -670,14 +756,25 @@ function DetailsStep({ c, set }: { c: CreatorChoices; set: (p: Partial<CreatorCh
             selected={c.weaponMasteries}
             limit={masteries}
             onChange={(weaponMasteries) => set({ weaponMasteries })}
-            label={(w) => `${WEAPONS[w]!.name} (${cap(WEAPONS[w]!.mastery)})`}
+            label={(w) => (
+              <>
+                <MaybeLink entry={{ kind: 'weapon', id: w }} hoverOnly>
+                  {WEAPONS[w]!.name}
+                </MaybeLink>{' '}
+                (
+                <MaybeLink entry={{ kind: 'mastery', id: WEAPONS[w]!.mastery }} hoverOnly>
+                  {RULES_TEXT.masteries[WEAPONS[w]!.mastery]?.name ?? cap(WEAPONS[w]!.mastery)}
+                </MaybeLink>
+                )
+              </>
+            )}
           />
         </section>
       )}
 
       <section className="sheet-card">
         <h3>Languages: Common plus two ({c.languages.length}/2)</h3>
-        <Checklist options={STANDARD_LANGUAGES} selected={c.languages} limit={2} onChange={(languages) => set({ languages })} label={(l) => l} />
+        <Checklist options={STANDARD_LANGUAGES} selected={c.languages} limit={2} onChange={(languages) => set({ languages })} label={(l) => <LanguageName name={l} />} />
       </section>
     </div>
   );
@@ -703,7 +800,15 @@ function EquipmentPicker({ title, choices, selected, onChange }: { title: string
               />
               <span className="equipment-option__label">{o.label}</span>
               <span>
-                {o.items.map((it) => `${it.count > 1 ? `${it.count} × ` : ''}${ARMOR[it.id]?.name ?? WEAPONS[it.id]?.name ?? it.name}`).join(', ')}
+                {o.items.map((it, j) => (
+                  <Fragment key={`${it.id}-${j}`}>
+                    {j > 0 && ', '}
+                    {it.count > 1 ? `${it.count} × ` : ''}
+                    <MaybeLink entry={itemRef(it.id)} hoverOnly>
+                      {ARMOR[it.id]?.name ?? WEAPONS[it.id]?.name ?? it.name}
+                    </MaybeLink>
+                  </Fragment>
+                ))}
                 {o.items.length ? ', ' : ''}
                 {o.gold} GP
               </span>
@@ -713,4 +818,12 @@ function EquipmentPicker({ title, choices, selected, onChange }: { title: string
       ))}
     </section>
   );
+}
+
+/** Starting equipment ids name weapons, armor or gear. */
+function itemRef(id: string): EntryRef | null {
+  if (WEAPONS[id]) return { kind: 'weapon', id };
+  if (ARMOR[id]) return { kind: 'armor', id };
+  if (GEAR[id]) return { kind: 'gear', id };
+  return null;
 }

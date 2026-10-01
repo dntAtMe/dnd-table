@@ -1,6 +1,8 @@
 import type { ClientMessage, MapTemplate, SceneView } from '@dnd/protocol';
 import { AREA_SHAPES, AREA_SHAPE_LABELS, AREA_SIZE_LABELS, gridGeometry, parseSpellArea, type SpellArea } from '@dnd/rules';
 import { useEffect, useMemo, useState } from 'react';
+import { useKnowledge } from '../../lib/knowledge';
+import { EntityLink } from '../knowledge/EntityLink';
 import { TEMPLATE_COLORS, caughtBy, templateTitle, type TemplateSettings } from './TemplateLayer';
 
 type Send = (msg: ClientMessage) => void;
@@ -67,6 +69,11 @@ export function TemplateOptions({ value, onChange, isGm, onClear }: OptionsProps
           </option>
         ))}
       </select>
+      {spellId && (
+        <EntityLink entry={{ kind: 'spell', id: spellId }} className="template-options__info" label="About this spell">
+          i
+        </EntityLink>
+      )}
       <select
         value={value.shape}
         onChange={(e) => {
@@ -170,6 +177,18 @@ interface CardProps {
   onClose: () => void;
 }
 
+/** "Fireball · 20 ft", with the spell's name linked when the label names an SRD spell. */
+function TemplateTitle({ template: t }: { template: MapTemplate }) {
+  const { compendium } = useKnowledge();
+  const spell = t.label ? compendium.byName(t.label, 'spell') : undefined;
+  if (!spell || spell.kind !== 'spell') return <>{templateTitle(t)}</>;
+  return (
+    <>
+      <EntityLink entry={{ kind: 'spell', id: spell.id }}>{t.label}</EntityLink> · {t.size} ft
+    </>
+  );
+}
+
 /** The selected template: who it catches, and (for its owner and the GM) size, keep, hide and remove. */
 export function TemplateCard({ template: t, scene, isGm, canEdit, send, onClose }: CardProps) {
   const caught = useMemo(
@@ -188,7 +207,9 @@ export function TemplateCard({ template: t, scene, isGm, canEdit, send, onClose 
   return (
     <div className="template-card" style={{ ['--tpl' as string]: t.color }} role="dialog" aria-label="Area template">
       <div className="template-card__head">
-        <span className="template-card__title">{templateTitle(t)}</span>
+        <span className="template-card__title">
+          <TemplateTitle template={t} />
+        </span>
         {t.hidden && <span className="badge badge--gm">Hidden</span>}
         <button type="button" className="btn btn--sm" onClick={onClose} aria-label="Close">
           ×

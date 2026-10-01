@@ -237,6 +237,8 @@ export interface FeatureEntry {
   source: string;
   level?: number;
   description: string;
+  /** The knowledge base entry this comes from (subclass features point at their subclass). */
+  ref?: { kind: 'feature' | 'subclass' | 'trait' | 'feat'; id: string };
 }
 
 export interface DerivedCharacter {
@@ -524,18 +526,18 @@ export function computeCharacter(c: Character): DerivedCharacter {
   for (const l of def.levels.slice(0, level)) {
     for (const id of l.features) {
       const f = FEATURES[id];
-      if (f) features.push({ name: f.name, source: def.name, level: l.level, description: f.description });
+      if (f) features.push({ name: f.name, source: def.name, level: l.level, description: f.description, ref: { kind: 'feature', id: f.id } });
     }
   }
   const subclass = c.subclassId ? SUBCLASSES[c.subclassId] : undefined;
-  if (subclass) for (const f of subclass.features) if (f.level <= level) features.push({ name: f.name, source: subclass.name, level: f.level, description: f.description });
+  if (subclass) for (const f of subclass.features) if (f.level <= level) features.push({ name: f.name, source: subclass.name, level: f.level, description: f.description, ref: { kind: 'subclass', id: subclass.id } });
   for (const id of traits) {
     const t = TRAITS[id];
-    if (t) features.push({ name: t.name, source: species?.name ?? 'Species', description: t.description });
+    if (t) features.push({ name: t.name, source: species?.name ?? 'Species', description: t.description, ref: { kind: 'trait', id: t.id } });
   }
   for (const f of featEntries(c)) {
     const feat = FEATS[f.featId];
-    if (feat) features.push({ name: feat.name + (f.note ? ` (${f.note})` : ''), source: f.source, description: feat.description });
+    if (feat) features.push({ name: feat.name + (f.note ? ` (${f.note})` : ''), source: f.source, description: feat.description, ref: { kind: 'feat', id: feat.id } });
   }
 
   const armorNames = def.armorTraining.map((a) => (a === 'shield' ? 'Shields' : `${a[0]!.toUpperCase()}${a.slice(1)} armor`));

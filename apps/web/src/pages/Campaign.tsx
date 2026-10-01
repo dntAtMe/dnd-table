@@ -1,5 +1,5 @@
 import type { CameraRect, User } from '@dnd/protocol';
-import { gridGeometry, pointToCell, type TerrainId } from '@dnd/rules';
+import { gridGeometry, pointToCell, type EntryRef, type TerrainId } from '@dnd/rules';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router';
 import { DiceTray } from '../components/DiceTray';
@@ -28,6 +28,11 @@ import { HandoutsPanel, ShowcaseStatus } from '../components/handouts/HandoutsPa
 import { ShowcaseOverlay, useHandoutNotice, usePlayerShowcase } from '../components/handouts/Showcase';
 import { WikiPanel } from '../components/wiki/WikiPanel';
 import { useWikiOpenRequest, useWikiSync, useWikiUnreadCount } from '../components/wiki/wikiStore';
+import { CompendiumView } from '../components/knowledge/CompendiumView';
+import { useEntryHistory } from '../components/knowledge/history';
+import { PopupLayer } from '../components/knowledge/PopupLayer';
+import { RichText } from '../components/knowledge/RichText';
+import { QuickSearch, useQuickSearchShortcut } from '../components/knowledge/QuickSearch';
 import { useGameSocket, type SocketStatus } from '../lib/useGameSocket';
 
 const STATUS_TEXT: Record<SocketStatus, string> = {
@@ -54,8 +59,8 @@ function Section({ title, children, className = '', tab }: SectionProps) {
   );
 }
 
-/** 'combat' and 'handouts' share the second phone tab with the sheet (see MobileSwitch). */
-type Tab = 'map' | 'sheet' | 'combat' | 'handouts' | 'wiki' | 'dice' | 'log' | 'party';
+/** 'combat', 'handouts', 'compendium' and 'wiki' share the second phone tab with the sheet (see MobileSwitch). */
+type Tab = 'map' | 'sheet' | 'combat' | 'handouts' | 'compendium' | 'wiki' | 'dice' | 'log' | 'party';
 
 const PLAYER_TOOLS: ToolOption[] = [
   { tool: 'move', label: 'Move' },
@@ -71,9 +76,19 @@ const EDIT_TOOLS: ToolOption[] = [
   { tool: 'erase', label: 'Erase' },
 ];
 
-const TAB_LABELS: Record<Tab, string> = { map: 'Map', sheet: 'Sheet', combat: 'Combat', handouts: 'Handouts', wiki: 'Wiki', dice: 'Dice', log: 'Log', party: 'Party' };
+const TAB_LABELS: Record<Tab, string> = {
+  map: 'Map',
+  sheet: 'Sheet',
+  combat: 'Combat',
+  handouts: 'Handouts',
+  compendium: 'Compendium',
+  wiki: 'Wiki',
+  dice: 'Dice',
+  log: 'Log',
+  party: 'Party',
+};
 /** Center views other than the map. */
-const CENTER_VIEWS = new Set<Tab>(['sheet', 'combat', 'handouts', 'wiki']);
+const CENTER_VIEWS = new Set<Tab>(['sheet', 'combat', 'handouts', 'compendium', 'wiki']);
 
 function MapEmpty({ isGm }: { isGm: boolean }) {
   return (
@@ -91,6 +106,17 @@ export function Campaign({ user }: { user: User }) {
   const { id = '' } = useParams();
   const { state, send } = useGameSocket(`campaign=${encodeURIComponent(id)}`);
   const [tab, setTab] = useState<Tab>('map');
+  const compendiumHistory = useEntryHistory();
+  const showInCompendium = useCallback(
+    (ref: EntryRef) => {
+      setTab('compendium');
+      compendiumHistory.go(ref);
+    },
+    [compendiumHistory],
+  );
+  const [searching, setSearching] = useState(false);
+  const toggleSearch = useCallback(() => setSearching((s) => !s), []);
+  useQuickSearchShortcut(toggleSearch);
   const [toast, setToast] = useState<string>();
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
   const [tool, setTool] = useState<MapTool>('move');
@@ -261,6 +287,12 @@ export function Campaign({ user }: { user: User }) {
         <h1 className="topbar__title">{hello.campaign.name}</h1>
         <span className={`badge ${isGm ? 'badge--gm' : ''}`}>{isGm ? 'GM' : 'Player'}</span>
         <div className="topbar__right">
+          <button type="button" className="topbar__search" onClick={() => setSearching(true)} aria-label="Search the compendium" title="Search the compendium (Ctrl/⌘ K)">
+            <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+              <circle cx="8.5" cy="8.5" r="5.5" />
+              <path d="m13 13 4.5 4.5" />
+            </svg>
+          </button>
           <AudioControl
             audio={state.audio}
             prefs={audioPrefs}
@@ -347,6 +379,9 @@ export function Campaign({ user }: { user: User }) {
           <button type="button" role="tab" aria-selected={tab === 'handouts'} className={tab === 'handouts' ? 'is-active' : ''} onClick={() => setTab('handouts')}>
             Handouts
             {unreadHandouts > 0 && <span className="center-switch__unread" aria-label={`${unreadHandouts} unread`}>{unreadHandouts}</span>}
+          </button>
+          <button type="button" role="tab" aria-selected={tab === 'compendium'} className={tab === 'compendium' ? 'is-active' : ''} onClick={() => setTab('compendium')}>
+            Compendium
           </button>
           <button type="button" role="tab" aria-selected={tab === 'wiki'} className={tab === 'wiki' ? 'is-active' : ''} onClick={() => setTab('wiki')}>
             Wiki
@@ -485,6 +520,10 @@ export function Campaign({ user }: { user: User }) {
             send={send}
           />
         </section>
+        <section className="campaign__compendium" data-tab="compendium">
+          <MobileSwitch tab={tab} setTab={setTab} live={Boolean(combat)} unread={unreadHandouts} />
+          <CompendiumView history={compendiumHistory} />
+        </section>
         <section className="campaign__wiki" data-tab="wiki">
           <MobileSwitch tab={tab} setTab={setTab} live={Boolean(combat)} unread={unreadHandouts} />
           <WikiPanel active={tab === 'wiki'} />
@@ -521,6 +560,9 @@ export function Campaign({ user }: { user: User }) {
 
       {ambient.blocked && <AudioUnlockPrompt onUnlock={ambient.unlock} />}
 
+      <PopupLayer onShow={showInCompendium} />
+      {searching && <QuickSearch onClose={() => setSearching(false)} />}
+
       {playerShowcase && <ShowcaseOverlay showcase={playerShowcase} onClose={closePlayerShowcase} />}
 
       {handoutNotice && tab !== 'handouts' && (
@@ -554,11 +596,11 @@ export function Campaign({ user }: { user: User }) {
   );
 }
 
-/** Phones: the sheet, the combat tracker and handouts share a tab, with this switch at the top. */
+/** Phones: the sheet, the combat tracker, handouts and the compendium share a tab, with this switch at the top. */
 function MobileSwitch({ tab, setTab, live, unread }: { tab: Tab; setTab: (t: Tab) => void; live: boolean; unread: number }) {
   const unreadWiki = useWikiUnreadCount();
   return (
-    <div className="segmented segmented--full mobile-switch" role="tablist" aria-label="Sheet, combat, handouts or wiki">
+    <div className="segmented segmented--full mobile-switch" role="tablist" aria-label="Sheet, combat, handouts, compendium or wiki">
       <button type="button" role="tab" aria-selected={tab === 'sheet'} className={tab === 'sheet' ? 'is-active' : ''} onClick={() => setTab('sheet')}>
         Sheet
       </button>
@@ -574,7 +616,27 @@ function MobileSwitch({ tab, setTab, live, unread }: { tab: Tab; setTab: (t: Tab
         Wiki
         {unreadWiki > 0 && <span className="center-switch__unread" aria-label={`${unreadWiki} new`}>{unreadWiki}</span>}
       </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={tab === 'compendium'}
+        aria-label="Compendium"
+        title="Compendium"
+        className={`mobile-switch__icon${tab === 'compendium' ? ' is-active' : ''}`}
+        onClick={() => setTab('compendium')}
+      >
+        <BookIcon />
+      </button>
     </div>
+  );
+}
+
+function BookIcon() {
+  return (
+    <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true">
+      <path d="M10 5.5C8.2 4 5.6 3.6 2.5 4v11.5c3.1-.4 5.7 0 7.5 1.5 1.8-1.5 4.4-1.9 7.5-1.5V4c-3.1-.4-5.7 0-7.5 1.5Z" />
+      <path d="M10 5.5V17" />
+    </svg>
   );
 }
 
@@ -586,7 +648,11 @@ function LastRoll({ state, userId }: { state: ReturnType<typeof useGameSocket>['
     <div className="last-roll" key={last.id}>
       <div className="last-roll__head">
         <span>Your last roll</span>
-        {last.label && <span className="entry__label">{last.label}</span>}
+        {last.label && (
+          <span className="entry__label">
+            <RichText text={last.label} inline />
+          </span>
+        )}
         <span className="entry__expr">{last.roll.expression}</span>
       </div>
       <RollView roll={last.roll} />

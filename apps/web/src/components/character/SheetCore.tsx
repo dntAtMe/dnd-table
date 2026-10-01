@@ -12,6 +12,8 @@ import {
   type ConditionId,
 } from '@dnd/rules';
 import { useState, type FormEvent } from 'react';
+import { EntityLink, MaybeLink } from '../knowledge/EntityLink';
+import { RichText } from '../knowledge/RichText';
 import { signed, type CharacterActions } from './useCharacter';
 
 const PROFICIENCY_MARK = { 0: '○', 0.5: '◐', 1: '●', 2: '◉' } as const;
@@ -177,7 +179,11 @@ export function AbilitiesTab({ a }: { a: CharacterActions }) {
                   <span className="skill-row__mark" title={PROFICIENCY_TITLE[sk.proficiency]}>
                     {PROFICIENCY_MARK[sk.proficiency]}
                   </span>
-                  <span className="skill-row__name">{SKILLS[s].name}</span>
+                  <span className="skill-row__name">
+                    <MaybeLink entry={{ kind: 'skill', id: s }} hoverOnly>
+                      {SKILLS[s].name}
+                    </MaybeLink>
+                  </span>
                   <span className="skill-row__bonus">{signed(sk.bonus)}</span>
                 </button>
               );
@@ -231,7 +237,9 @@ export function CombatTab({ a }: { a: CharacterActions }) {
           {derived.attacks.map((atk) => (
             <li key={atk.id} className="attack">
               <div className="attack__main">
-                <span className="attack__name">{atk.name}</span>
+                <span className="attack__name">
+                  <MaybeLink entry={atk.id.includes(':') ? { kind: 'weapon', id: atk.id.split(':')[1]! } : null}>{atk.name}</MaybeLink>
+                </span>
                 <span className="attack__meta">
                   {atk.range} · {atk.damageType}
                   {!atk.proficient && ' · not proficient'}
@@ -262,7 +270,10 @@ export function CombatTab({ a }: { a: CharacterActions }) {
                 <div className="attack__extra">
                   {atk.mastery && (
                     <button type="button" className="chip" onClick={() => setOpenMastery(openMastery === atk.id ? null : atk.id)}>
-                      Mastery: {RULES_TEXT.masteries[atk.mastery]?.name ?? atk.mastery}
+                      Mastery:{' '}
+                      <EntityLink entry={{ kind: 'mastery', id: atk.mastery }} hoverOnly>
+                        {RULES_TEXT.masteries[atk.mastery]?.name ?? atk.mastery}
+                      </EntityLink>
                     </button>
                   )}
                   {atk.notes.map((n) => (
@@ -270,7 +281,9 @@ export function CombatTab({ a }: { a: CharacterActions }) {
                       {n}
                     </span>
                   ))}
-                  {openMastery === atk.id && atk.mastery && <p className="hint">{RULES_TEXT.masteries[atk.mastery]?.description}</p>}
+                  {openMastery === atk.id && atk.mastery && (
+                    <RichText text={RULES_TEXT.masteries[atk.mastery]?.description ?? ''} self={{ kind: 'mastery', id: atk.mastery }} className="hint" />
+                  )}
                 </div>
               )}
             </li>
@@ -291,7 +304,9 @@ export function CombatTab({ a }: { a: CharacterActions }) {
               title={CONDITIONS[id].summary}
               aria-pressed={conditions.has(id)}
             >
-              {CONDITIONS[id].name}
+              <EntityLink entry={{ kind: 'condition', id }} hoverOnly>
+                {CONDITIONS[id].name}
+              </EntityLink>
             </button>
           ))}
         </div>

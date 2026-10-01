@@ -21,6 +21,8 @@ import {
   type Skill,
 } from '@dnd/rules';
 import { useMemo, useState } from 'react';
+import { MaybeLink } from '../knowledge/EntityLink';
+import { RichText } from '../knowledge/RichText';
 
 const ORDINAL = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th'];
 
@@ -73,7 +75,7 @@ export function LevelUp({ record, send, onDone }: { record: CharacterRecord; sen
             {c.name}: level {plan.level}
           </h2>
           <p className="muted">
-            {CLASSES[c.classId]?.name} {plan.level}
+            <MaybeLink entry={{ kind: 'class', id: c.classId }}>{CLASSES[c.classId]?.name}</MaybeLink> {plan.level}
           </p>
         </div>
         <button type="button" className="btn btn--ghost btn--sm" onClick={onDone}>
@@ -90,9 +92,17 @@ export function LevelUp({ record, send, onDone }: { record: CharacterRecord; sen
                 <li key={f.source + f.name}>
                   <details>
                     <summary>
-                      {f.name} <span className="muted">· {f.source}</span>
+                      <MaybeLink entry={f.ref?.kind === 'feature' ? f.ref : null} hoverOnly>
+                        {f.name}
+                      </MaybeLink>{' '}
+                      <span className="muted">
+                        ·{' '}
+                        <MaybeLink entry={f.ref?.kind === 'subclass' ? f.ref : null} hoverOnly>
+                          {f.source}
+                        </MaybeLink>
+                      </span>
                     </summary>
-                    <p className="prose">{f.description}</p>
+                    <RichText text={f.description} self={f.ref} className="prose" />
                   </details>
                 </li>
               ))}
@@ -148,9 +158,15 @@ export function LevelUp({ record, send, onDone }: { record: CharacterRecord; sen
                 const sub = SUBCLASSES[id]!;
                 return (
                   <button key={id} type="button" className={`choice-card${ch.subclassId === id ? ' is-selected' : ''}`} onClick={() => set({ subclassId: id })}>
-                    <span className="choice-card__title">{sub.name}</span>
+                    <span className="choice-card__title">
+                      <MaybeLink entry={{ kind: 'subclass', id }} hoverOnly>
+                        {sub.name}
+                      </MaybeLink>
+                    </span>
                     <span className="choice-card__meta">{sub.summary}</span>
-                    <span className="choice-card__line">{sub.description}</span>
+                    <span className="choice-card__line">
+                      <RichText text={sub.description} self={{ kind: 'subclass', id }} inline hoverOnly />
+                    </span>
                   </button>
                 );
               })}
@@ -165,15 +181,23 @@ export function LevelUp({ record, send, onDone }: { record: CharacterRecord; sen
             <div className="choice-grid choice-grid--compact">
               {featsForLevel(plan.featChoice, plan.level, takenFeats).map((f) => (
                 <button key={f.id} type="button" className={`choice-card${ch.featId === f.id ? ' is-selected' : ''}`} onClick={() => set({ featId: f.id, increases: {} })}>
-                  <span className="choice-card__title">{f.name}</span>
+                  <span className="choice-card__title">
+                    <MaybeLink entry={{ kind: 'feat', id: f.id }} hoverOnly>
+                      {f.name}
+                    </MaybeLink>
+                  </span>
                   {f.prerequisite && <span className="choice-card__line">Requires {f.prerequisite}</span>}
                 </button>
               ))}
             </div>
             {feat && feat.id !== 'ability-score-improvement' && (
               <details className="rules-text" open>
-                <summary>{feat.name}</summary>
-                <p className="prose">{feat.description}</p>
+                <summary>
+                  <MaybeLink entry={{ kind: 'feat', id: feat.id }} hoverOnly>
+                    {feat.name}
+                  </MaybeLink>
+                </summary>
+                <RichText text={feat.description} self={{ kind: 'feat', id: feat.id }} className="prose" />
               </details>
             )}
             {feat && featAbilities.length > 0 && (
@@ -223,7 +247,9 @@ export function LevelUp({ record, send, onDone }: { record: CharacterRecord; sen
                     disabled={!ch.expertise.includes(s) && ch.expertise.length >= plan.newExpertise}
                     onChange={() => set({ expertise: ch.expertise.includes(s) ? ch.expertise.filter((x) => x !== s) : [...ch.expertise, s] })}
                   />
-                  {SKILLS[s].name}
+                  <MaybeLink entry={{ kind: 'skill', id: s }} hoverOnly>
+                    {SKILLS[s].name}
+                  </MaybeLink>
                 </label>
               ))}
             </div>
@@ -248,7 +274,9 @@ export function LevelUp({ record, send, onDone }: { record: CharacterRecord; sen
                         set({ weaponMasteries: ch.weaponMasteries.includes(w) ? ch.weaponMasteries.filter((x) => x !== w) : [...ch.weaponMasteries, w] })
                       }
                     />
-                    {WEAPONS[w]!.name}
+                    <MaybeLink entry={{ kind: 'weapon', id: w }} hoverOnly>
+                      {WEAPONS[w]!.name}
+                    </MaybeLink>
                   </label>
                 ))}
             </div>
@@ -263,8 +291,14 @@ export function LevelUp({ record, send, onDone }: { record: CharacterRecord; sen
                 .filter((f) => f.type === 'fighting-style')
                 .map((f) => (
                   <button key={f.id} type="button" className={`choice-card${ch.fightingStyle === f.id ? ' is-selected' : ''}`} onClick={() => set({ fightingStyle: f.id })}>
-                    <span className="choice-card__title">{f.name}</span>
-                    <span className="choice-card__line">{f.description.split('\n')[0]}</span>
+                    <span className="choice-card__title">
+                      <MaybeLink entry={{ kind: 'feat', id: f.id }} hoverOnly>
+                        {f.name}
+                      </MaybeLink>
+                    </span>
+                    <span className="choice-card__line">
+                      <RichText text={f.description.split('\n')[0]!} self={{ kind: 'feat', id: f.id }} inline hoverOnly />
+                    </span>
                   </button>
                 ))}
             </div>

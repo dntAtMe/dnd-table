@@ -1,5 +1,6 @@
 import { formatCr, type MonsterDef } from '@dnd/rules';
 import { useMemo, useState } from 'react';
+import { MaybeLink } from '../knowledge/EntityLink';
 import './combat.css';
 
 const MAX_RESULTS = 60;
@@ -53,7 +54,11 @@ export function MonsterBrowser({ monsters, selectedId, onSelect }: Props) {
         {results.slice(0, MAX_RESULTS).map((m) => (
           <li key={m.id}>
             <button type="button" className={m.id === selectedId ? 'is-active' : ''} onClick={() => onSelect(m)}>
-              <span className="monster-browser__name">{m.name}</span>
+              <span className="monster-browser__name">
+                <MaybeLink entry={{ kind: 'monster', id: m.id }} hoverOnly>
+                  {m.name}
+                </MaybeLink>
+              </span>
               <span className="muted">
                 CR {formatCr(m.cr)} · {m.size} {m.type}
               </span>

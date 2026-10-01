@@ -42,6 +42,8 @@ Phases 1–5 are done:
       caught creatures highlighted, spell areas read from the SRD
 - [x] Lighting and vision: scene light levels, token light sources, darkvision from sheets, walls and
       doors blocking sight, players see only what their tokens see, optional dynamic fog
+- [x] Knowledge base: every SRD name in sheets, stat blocks, the log and handouts is a link with
+      nested hover popups; a searchable Compendium view and a Ctrl/⌘ K quick search
 
 ## Running locally
 
@@ -169,6 +171,28 @@ block sight; creatures out of sight never reach player devices.
 
 Playback state lives on the server: someone joining mid-song starts at the same point as everyone
 else (to within a second or so).
+
+### Knowledge base
+
+Names of spells, monsters, conditions, items, classes, feats and other SRD entries (and campaign
+pages) are links wherever they appear: the character sheet, creator and level-up, stat blocks and
+the initiative tracker, the log and handouts.
+
+1. **Hover** a link (mouse) to preview it beside the link; move into the preview to keep it open.
+   Links inside a preview open further previews beside it, up to six deep.
+2. **Click** a link (or press Space while a preview shows, or click inside it) to **pin** it: pinned
+   popups stay until you close them with × or Escape (topmost first); a click elsewhere only drops
+   unpinned previews. On phones a tap opens a bottom sheet. Names inside buttons and rows (choice
+   cards, conditions, tracker rows) preview on hover and pin on Ctrl/⌘-click, so a plain click still
+   does what the control does.
+3. **Shift-click** a link, or **Open in Compendium** in a popup, to open the **Compendium** view (next
+   to Handouts; the book icon on phones): instant search with kind filters, the full entry, and
+   back/forward history.
+4. **Ctrl/⌘ K** (or the search button in the top bar) opens quick search: arrow keys, **Enter** pins a
+   popup for the result, **Shift+Enter** opens it in the Compendium.
+
+Write `[[Name]]` or `[[kind:id|label]]` (e.g. `[[spell:fireball|that spell]]`) in handouts or chat
+to link explicitly; names are otherwise found automatically.
 
 ### Single-port production mode
 

@@ -16,7 +16,7 @@ export interface LevelUpPlan {
   hitDie: number;
   hpAverage: number;
   /** Class and subclass features gained at this level. */
-  features: { name: string; source: string; description: string }[];
+  features: { name: string; source: string; description: string; ref?: { kind: 'feature' | 'subclass'; id: string } }[];
   needsSubclass: boolean;
   subclassOptions: string[];
   /** 'asi' levels allow ASI or a general feat; 'boon' levels an Epic Boon. */
@@ -67,10 +67,10 @@ export function levelUpPlan(c: Character): LevelUpPlan | null {
   const features = row.features
     .map((id) => FEATURES[id])
     .filter((f): f is NonNullable<typeof f> => Boolean(f))
-    .map((f) => ({ name: f.name, source: cls.name, description: f.description }));
+    .map((f): LevelUpPlan['features'][number] => ({ name: f.name, source: cls.name, description: f.description, ref: { kind: 'feature', id: f.id } }));
   if (subclassId) {
     for (const f of SUBCLASSES[subclassId]?.features ?? []) {
-      if (f.level === level) features.push({ name: f.name, source: SUBCLASSES[subclassId]!.name, description: f.description });
+      if (f.level === level) features.push({ name: f.name, source: SUBCLASSES[subclassId]!.name, description: f.description, ref: { kind: 'subclass', id: subclassId } });
     }
   }
   const featChoice = featLevels(c.classId).find((f) => f.level === level)?.kind ?? null;

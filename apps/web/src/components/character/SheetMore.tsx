@@ -1,5 +1,8 @@
-import { ARMOR, WEAPONS, type CharacterSpell, type SpellDef } from '@dnd/rules';
+import { ARMOR, WEAPONS, type CharacterSpell, type EntryKind, type SpellDef } from '@dnd/rules';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useKnowledge } from '../../lib/knowledge';
+import { MaybeLink } from '../knowledge/EntityLink';
+import { RichText } from '../knowledge/RichText';
 import { Pips } from './SheetCore';
 import { signed, type CharacterActions } from './useCharacter';
 
@@ -137,7 +140,9 @@ export function SpellsTab({ a }: { a: CharacterActions }) {
                         />
                       )}
                       <button type="button" className="spell__name" onClick={() => setOpen(open === index ? null : index)}>
-                        {spell.name}
+                        <MaybeLink entry={spell.spellId ? { kind: 'spell', id: spell.spellId } : null} hoverOnly>
+                          {spell.name}
+                        </MaybeLink>
                         {def?.concentration && <span className="badge">C</span>}
                         {def?.ritual && <span className="badge">R</span>}
                       </button>
@@ -160,9 +165,9 @@ export function SpellsTab({ a }: { a: CharacterActions }) {
                             {def.material ? ` (${def.material})` : ''} · {def.duration}
                           </p>
                         )}
-                        {def && <p className="prose">{def.description}</p>}
-                        {def?.higherLevel && <p className="prose">{def.higherLevel}</p>}
-                        {spell.notes && <p className="prose">{spell.notes}</p>}
+                        {def && <RichText text={def.description} self={{ kind: 'spell', id: def.id }} className="prose" />}
+                        {def?.higherLevel && <RichText text={def.higherLevel} self={{ kind: 'spell', id: def.id }} className="prose" />}
+                        {spell.notes && <RichText text={spell.notes} className="prose" />}
                         {canEdit && (
                           <button type="button" className="btn btn--sm btn--danger" onClick={() => updateSpell(index, null)}>
                             Remove
@@ -291,13 +296,18 @@ export function FeaturesTab({ a }: { a: CharacterActions }) {
             return (
               <li key={key}>
                 <button type="button" className="feature__head" onClick={() => setOpen(open === key ? null : key)} aria-expanded={open === key}>
-                  <span className="feature__name">{f.name}</span>
+                  <span className="feature__name">
+                    {/* Subclass features have no entry of their own; the name would preview the whole subclass. */}
+                    <MaybeLink entry={f.ref?.kind === 'subclass' ? null : f.ref} hoverOnly>
+                      {f.name}
+                    </MaybeLink>
+                  </span>
                   <span className="muted">
                     {f.source}
                     {f.level ? ` ${f.level}` : ''}
                   </span>
                 </button>
-                {open === key && <p className="prose feature__desc">{f.description}</p>}
+                {open === key && <RichText text={f.description} self={f.ref} className="prose feature__desc" />}
               </li>
             );
           })}
@@ -337,7 +347,7 @@ export function InventoryTab({ a }: { a: CharacterActions }) {
           Shield (+2 AC)
         </label>
         <p className="hint">
-          AC {derived.ac}: {derived.acSource}
+          AC {derived.ac}: <RichText text={derived.acSource} inline />
         </p>
         {derived.warnings.map((w) => (
           <p key={w} className="form-error">
@@ -351,7 +361,9 @@ export function InventoryTab({ a }: { a: CharacterActions }) {
         <ul className="item-list">
           {eq.weapons.map((w, i) => (
             <li key={i}>
-              <span>{w.name || WEAPONS[w.weaponId]?.name || w.weaponId}</span>
+              <span>
+                <MaybeLink entry={WEAPONS[w.weaponId] ? { kind: 'weapon', id: w.weaponId } : null}>{w.name || WEAPONS[w.weaponId]?.name || w.weaponId}</MaybeLink>
+              </span>
               <span className="muted">
                 {WEAPONS[w.weaponId]?.damage} {WEAPONS[w.weaponId]?.damageType}
               </span>
@@ -392,7 +404,9 @@ export function InventoryTab({ a }: { a: CharacterActions }) {
         <ul className="item-list">
           {eq.items.map((it, i) => (
             <li key={i}>
-              <span>{it.name}</span>
+              <span>
+                <ItemName name={it.name} />
+              </span>
               <span className="muted">×{it.qty}</span>
               {canEdit && (
                 <span className="item-list__actions">
@@ -460,6 +474,15 @@ export function InventoryTab({ a }: { a: CharacterActions }) {
   );
 }
 
+const ITEM_KINDS: EntryKind[] = ['gear', 'magic-item', 'weapon', 'armor', 'poison'];
+
+/** An inventory item's name, linked when it names SRD gear or a magic item ("Rope", "Bag of Holding"). */
+function ItemName({ name }: { name: string }) {
+  const { compendium } = useKnowledge();
+  const entry = ITEM_KINDS.map((kind) => compendium.byName(name, kind)).find((e) => e && ITEM_KINDS.includes(e.kind));
+  return <MaybeLink entry={entry ? { kind: entry.kind, id: entry.id } : null}>{name}</MaybeLink>;
+}
+
 export function NotesTab({ a }: { a: CharacterActions }) {
   const { data, derived, canEdit } = a;
   const [notes, setNotes] = useState(data.notes);
@@ -488,7 +511,7 @@ export function NotesTab({ a }: { a: CharacterActions }) {
           <dt>Armor</dt>
           <dd>{p.armor.join(', ') || 'None'}</dd>
           <dt>Weapons</dt>
-          <dd>{p.weapons.join(', ') || 'None'}</dd>
+          <dd>{p.weapons.length ? <RichText text={p.weapons.join(', ')} inline /> : 'None'}</dd>
           <dt>Tools</dt>
           <dd>{p.tools.join(', ') || 'None'}</dd>
           <dt>Languages</dt>
