@@ -30,8 +30,9 @@ import {
 import type { WebSocket } from 'ws';
 import { CombatTracker, isCombatMessage } from './combat';
 import { applyMapEdit, checkPlayerMove, remapForGrid } from './mapEditor';
-import { GameError, applyGridPatch, clampToGrid, fogMask, sceneView, summary } from './scenes';
+import { GameError, applyGridPatch, clampToGrid, fogMask, summary } from './scenes';
 import type { Display, SceneRecord, Store } from './store';
+import { VisionTracker, isVisionMessage } from './vision';
 
 const LOG_HISTORY = 100;
 const HEARTBEAT_MS = 30_000;
@@ -69,6 +70,7 @@ export class Hub {
   private readonly cameras = new Map<string, { sceneId: string; rect: CameraRect }>();
   private readonly heartbeat: NodeJS.Timeout;
   private readonly combat: CombatTracker<Conn>;
+  private readonly vision: VisionTracker<Conn>;
 
   constructor(private readonly store: Store) {
     this.combat = new CombatTracker<Conn>(store, {
@@ -80,6 +82,7 @@ export class Hub {
       saveCharacter: (conn, id, data, before) => this.saveCharacter(conn, id, data, before),
       publish: (conn, entry) => this.publish(conn, entry),
     });
+    this.vision = new VisionTracker<Conn>(store, { sceneChanged: (campaignId, sceneId) => this.sceneChanged(campaignId, sceneId) });
     // Phones drop off Wi-Fi without closing sockets; ping so presence stays honest.
     this.heartbeat = setInterval(() => this.sweep(), HEARTBEAT_MS);
     this.heartbeat.unref();
@@ -217,7 +220,8 @@ export class Hub {
 
   private saveCharacter(conn: Conn, id: string, data: Character, before?: Character): void {
     this.store.updateCharacter(id, data);
-    if (!before || before.name !== data.name || before.color !== data.color) {
+    const darkvision = (c: Character) => computeCharacter(c).darkvision;
+    if (!before || before.name !== data.name || before.color !== data.color || darkvision(before) !== darkvision(data)) {
       for (const sceneId of this.store.syncCharacterTokens(id, data.name, data.color)) this.sceneChanged(conn.campaignId, sceneId);
     }
     this.charactersChanged(conn.campaignId);
@@ -299,20 +303,20 @@ export class Hub {
   private viewFor(conn: Conn): SceneView | null {
     const id = this.sceneIdFor(conn);
     const scene = id ? this.store.getScene(id) : undefined;
-    return scene ? sceneView(scene, this.store.tokens(scene.id), { role: conn.role, userId: conn.user?.id }) : null;
+    return scene ? this.vision.view(scene, this.vision.tokens(scene.id), { role: conn.role, userId: conn.user?.id }) : null;
   }
 
   /** Re-sends a scene to everyone looking at it, each filtered for their role. */
   private sceneChanged(campaignId: string, sceneId: string): void {
     const scene = this.store.getScene(sceneId);
     if (!scene) return;
-    const tokens = this.store.tokens(sceneId);
+    const tokens = this.vision.tokens(sceneId);
     const views = new Map<string, SceneView>();
     for (const conn of this.rooms.get(campaignId) ?? []) {
       if (this.sceneIdFor(conn) !== sceneId) continue;
       const key = conn.role === 'player' ? `player:${conn.user?.id}` : conn.role;
       let view = views.get(key);
-      if (!view) views.set(key, (view = sceneView(scene, tokens, { role: conn.role, userId: conn.user?.id })));
+      if (!view) views.set(key, (view = this.vision.view(scene, tokens, { role: conn.role, userId: conn.user?.id })));
       send(conn.socket, { type: 'scene', scene: view });
     }
   }
@@ -536,6 +540,7 @@ export class Hub {
 
   private dispatch(conn: Conn & { user: User }, msg: ClientMessage): void {
     if (isCombatMessage(msg)) return this.combat.handle(conn, msg);
+    if (isVisionMessage(msg)) return this.vision.handle(conn, msg);
     switch (msg.type) {
       case 'roll': {
         const roll = rollDice(msg.expr);

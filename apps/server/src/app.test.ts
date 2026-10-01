@@ -982,3 +982,149 @@ describe('combat', () => {
     expect((await playerSock.until('combat')).combat).toBeNull();
   });
 });
+
+describe('vision', () => {
+  /**
+   * GM, Ana and Bram on a blank 10×8 scene (50px cells) in play. A wall runs down between columns
+   * 4 and 5 with a closed door at row 1. Ana's token is at (1, 1), a goblin at (6, 1).
+   */
+  async function visionTable() {
+    const { gm, player, campaignId } = await campaignWithPlayer();
+    const gmSock = await gm.socket(`campaign=${campaignId}`);
+    const hello = await gmSock.until('hello');
+    const bram = await Client.register('bram', 'Bram');
+    await player.call('POST', '/api/campaigns/join', { inviteCode: hello.campaign.inviteCode });
+    await bram.call('POST', '/api/campaigns/join', { inviteCode: hello.campaign.inviteCode });
+    const anaId = (await player.call('GET', '/api/auth/me')).data.user.id as string;
+    const bramId = (await bram.call('GET', '/api/auth/me')).data.user.id as string;
+    const playerSock = await player.socket(`campaign=${campaignId}`);
+    await playerSock.until('hello');
+    gmSock.send({ type: 'scene:create', name: 'Keep', fileId: null, width: 500, height: 400, grid: { size: 50 } });
+    const sceneId = (await gmSock.until('scenes')).scenes[0]!.id;
+    gmSock.send({ type: 'scene:activate', sceneId });
+    const wall: Edge[] = [0, 2, 3, 4, 5, 6, 7].map((row) => ({ side: 'left', col: 5, row }));
+    gmSock.send({ type: 'map:walls', sceneId, edges: wall, wall: true });
+    gmSock.send({ type: 'map:door', sceneId, edge: door, state: 'closed', secret: false });
+    gmSock.send({ type: 'token:create', sceneId, name: 'Ana', color: '#3366ff', col: 1, row: 1, ownerUserId: anaId });
+    gmSock.send({ type: 'token:create', sceneId, name: 'Goblin', color: '#44aa44', col: 6, row: 1 });
+    const { scene } = await gmSock.until('scene', (m) => m.scene?.tokens.length === 2);
+    const playerView = (await playerSock.until('scene', (m) => m.scene?.tokens.length === 2)).scene!;
+    const token = (name: string) => scene!.tokens.find((t) => t.name === name)!;
+    return { gm, bram, campaignId, gmSock, playerSock, sceneId, bramId, playerView, ana: token('Ana'), goblin: token('Goblin') };
+  }
+
+  const door: Edge = { side: 'left', col: 5, row: 1 };
+  const names = (scene: SceneView | null) => scene!.tokens.map((t) => t.name).sort();
+  const mask = (scene: SceneView | null, field: 'visible' | 'dim' | 'fog') => {
+    const { cols, rows } = gridGeometry(scene!.grid, scene!.width, scene!.height);
+    return FogMask.decode(scene![field] ?? '', cols, rows);
+  };
+
+  it('shows players only what their tokens see: not past walls, closed doors or into darkness', async () => {
+    const { gmSock, playerSock, sceneId, ana, goblin, playerView } = await visionTable();
+    let view = playerView;
+    // Vision off: nothing changes.
+    expect(view.vision).toEqual({ enabled: false, lighting: 'bright', dynamicFog: false });
+    expect(view.visible).toBeUndefined();
+    expect(names(view)).toEqual(['Ana', 'Goblin']);
+
+    gmSock.send({ type: 'vision:scene', sceneId, enabled: true });
+    view = (await playerSock.until('scene', (m) => m.scene!.vision.enabled)).scene!;
+    expect(names(view)).toEqual(['Ana']);
+    expect(mask(view, 'visible').isRevealed(4, 6)).toBe(true);
+    expect(mask(view, 'visible').isRevealed(6, 1)).toBe(false);
+    expect(mask(view, 'dim').isRevealed(4, 6)).toBe(false);
+    // Without fog the map itself is known; only creatures are hidden.
+    expect(MapData.decode(view.map, 10, 8).blocks({ side: 'left', col: 5, row: 7 })).toBe(true);
+    const gmView = (await gmSock.until('scene', (m) => m.scene!.vision.enabled)).scene!;
+    expect(names(gmView)).toEqual(['Ana', 'Goblin']);
+    expect(gmView.visible).toBeUndefined();
+
+    gmSock.send({ type: 'door:toggle', sceneId, edge: door });
+    view = (await playerSock.until('scene', (m) => m.scene!.tokens.length === 2)).scene!;
+    expect(mask(view, 'visible').isRevealed(6, 1)).toBe(true);
+
+    // Night falls: Ana has no darkvision and no light, so she sees nothing but still has her token.
+    gmSock.send({ type: 'vision:scene', sceneId, lighting: 'dark' });
+    view = (await playerSock.until('scene', (m) => m.scene!.vision.lighting === 'dark')).scene!;
+    expect(names(view)).toEqual(['Ana']);
+    expect(mask(view, 'visible').bits.every((b) => b === 0)).toBe(true);
+
+    // She lights a torch: bright light 20 ft, dim 20 ft further, so the goblin 25 ft away is in dim light.
+    playerSock.send({ type: 'vision:token', tokenId: ana.id, light: { preset: 'torch', bright: 20, dim: 20 } });
+    view = (await playerSock.until('scene', (m) => m.scene!.tokens.length === 2)).scene!;
+    expect(view.tokens.find((t) => t.id === ana.id)!.light).toEqual({ preset: 'torch', bright: 20, dim: 20 });
+    expect(mask(view, 'dim').isRevealed(6, 1)).toBe(true);
+    expect(mask(view, 'dim').isRevealed(2, 1)).toBe(false);
+    expect(mask(view, 'visible').isRevealed(7, 6)).toBe(false);
+
+    // Closing the door shuts the goblin out again.
+    gmSock.send({ type: 'door:toggle', sceneId, edge: door });
+    view = (await playerSock.until('scene', (m) => m.scene!.tokens.length === 1)).scene!;
+    expect(names(view)).toEqual(['Ana']);
+
+    // Players may only light their own token, and only the GM sets senses or scene lighting.
+    playerSock.send({ type: 'vision:token', tokenId: goblin.id, light: null });
+    expect(await playerSock.until('error')).toMatchObject({ message: "That's not your token" });
+    playerSock.send({ type: 'vision:token', tokenId: ana.id, senses: { darkvision: 120 } });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'Only the GM can change senses' });
+    playerSock.send({ type: 'vision:scene', sceneId, lighting: 'bright' });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'Only the GM can do that' });
+  });
+
+  it("gives character tokens their character's darkvision unless the GM overrides it", async () => {
+    const { gmSock, playerSock, sceneId, ana, goblin } = await visionTable();
+    gmSock.send({ type: 'token:delete', tokenId: ana.id });
+    playerSock.send({ type: 'character:create', data: fighter('Thora', { speciesId: 'dwarf' }) });
+    const characterId = (await playerSock.until('characters', (m) => m.characters.length === 1)).characters[0]!.id;
+    playerSock.send({ type: 'character:token', characterId });
+    gmSock.send({ type: 'vision:scene', sceneId, enabled: true, lighting: 'dark' });
+    await gmSock.until('scene', (m) => m.scene!.vision.lighting === 'dark');
+    gmSock.send({ type: 'token:move', tokenId: goblin.id, col: 8, row: 6 });
+
+    // Thora stands at (5, 4); darkvision 120 ft sees the goblin in the dark as dim.
+    let view = (await playerSock.until('scene', (m) => m.scene!.tokens.some((t) => t.name === 'Goblin' && t.col === 8))).scene!;
+    expect(view.vision.lighting).toBe('dark');
+    const thora = view.tokens.find((t) => t.name === 'Thora')!;
+    expect(thora).toMatchObject({ col: 5, row: 4, characterId });
+    expect(mask(view, 'dim').isRevealed(8, 6)).toBe(true);
+
+    // Beyond the darkvision the GM sets instead, the goblin is lost in the dark.
+    gmSock.send({ type: 'vision:token', tokenId: thora.id, senses: { darkvision: 10 } });
+    view = (await playerSock.until('scene', (m) => m.scene!.tokens.length === 1)).scene!;
+    expect(names(view)).toEqual(['Thora']);
+    gmSock.send({ type: 'vision:token', tokenId: thora.id, senses: {} });
+    await playerSock.until('scene', (m) => m.scene!.tokens.length === 2);
+
+    // A human can't see in the dark: changing species re-sends the view.
+    playerSock.send({ type: 'character:update', characterId, data: fighter('Thora') });
+    view = (await playerSock.until('scene', (m) => m.scene!.tokens.length === 1)).scene!;
+    expect(names(view)).toEqual(['Thora']);
+  });
+
+  it('shows table screens what the whole party sees', async () => {
+    const { gm, bram, campaignId, gmSock, playerSock, sceneId, bramId } = await visionTable();
+    const bramSock = await bram.socket(`campaign=${campaignId}`);
+    await bramSock.until('hello');
+    gmSock.send({ type: 'token:create', sceneId, name: 'Bram', color: '#aa3366', col: 8, row: 6, ownerUserId: bramId });
+    gmSock.send({ type: 'token:create', sceneId, name: 'Orc', color: '#448844', col: 2, row: 6 });
+    gmSock.send({ type: 'token:create', sceneId, name: 'Familiar', color: '#888888', col: 3, row: 3 });
+    gmSock.send({ type: 'vision:scene', sceneId, enabled: true });
+    await gmSock.until('scene', (m) => m.scene!.vision.enabled && m.scene!.tokens.length === 5);
+    const { data: display } = await new Client().call('POST', '/api/displays');
+    const tv = await Sock.open(`ws://${base}/ws?display=${display.token}`, '');
+    await tv.until('display:unpaired');
+    await gm.call('POST', `/api/campaigns/${campaignId}/displays`, { code: display.code });
+
+    expect(names((await playerSock.until('scene', (m) => m.scene!.vision.enabled && m.scene!.tokens.length === 3)).scene)).toEqual([
+      'Ana',
+      'Familiar',
+      'Orc',
+    ]);
+    expect(names((await bramSock.until('scene', (m) => m.scene!.vision.enabled)).scene)).toEqual(['Bram', 'Goblin']);
+    const tvView = (await tv.until('hello')).scene!;
+    expect(names(tvView)).toEqual(['Ana', 'Bram', 'Familiar', 'Goblin', 'Orc']);
+    expect(mask(tvView, 'visible').bits.every((b) => b === 0xff)).toBe(true);
+    tv.close();
+  });
+});
