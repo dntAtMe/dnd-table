@@ -1,5 +1,12 @@
 {
   "name": "dnd-table",
+  "version": "1.0.0",
+  "description": "A virtual tabletop for D&D 5e (2024 rules) around a real table: GM laptop, player phones, TV battle map.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dntAtMe/dnd-table.git"
+  },
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.28.0",
@@ -9,10 +16,20 @@
     "start": "pnpm --filter @dnd/server run start",
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
-    "import:srd": "node scripts/import-srd.mjs"
+    "import:srd": "node scripts/import-srd.mjs",
+    "screenshots": "tsx scripts/screenshots.ts"
   },
   "devDependencies": {
+    "@dnd/protocol": "workspace:*",
+    "@dnd/rules": "workspace:*",
+    "@types/ws": "^8.18.2",
+    "playwright": "^1.63.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.7"
+    "vitest": "^3.2.7",
+    "ws": "^8.22.0"
+  },
+  "engines": {
+    "node": ">=22.5"
   }
 }
