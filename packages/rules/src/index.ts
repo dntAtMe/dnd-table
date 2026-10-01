@@ -3,4 +3,5 @@ export * from './character';
 export * from './dice';
 export * from './grid';
 export * from './levelup';
+export * from './mapdata';
 export * from './srd';
