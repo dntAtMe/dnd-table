@@ -1,5 +1,5 @@
 import type { ClientMessage, SceneSummary, SceneView } from '@dnd/protocol';
-import { gridGeometry, type Grid } from '@dnd/rules';
+import { LIGHTING_LABELS, LIGHTING_LEVELS, gridGeometry, type Grid, type Lighting } from '@dnd/rules';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api, errorMessage } from '../lib/api';
 
@@ -291,6 +291,45 @@ export function SceneSettings({ scene, isLive, send }: SceneSettingsProps) {
             </button>
           </div>
         )}
+      </fieldset>
+
+      <fieldset className="fields">
+        <legend>Lighting &amp; vision</legend>
+        <label className="field-row">
+          <span>Light</span>
+          <select
+            value={scene.vision.lighting}
+            onChange={(e) => send({ type: 'vision:scene', sceneId: scene.id, lighting: e.target.value as Lighting })}
+          >
+            {LIGHTING_LEVELS.map((l) => (
+              <option key={l} value={l}>
+                {LIGHTING_LABELS[l]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={scene.vision.enabled}
+            onChange={(e) => send({ type: 'vision:scene', sceneId: scene.id, enabled: e.target.checked })}
+          />
+          Token vision: players see only what their tokens see
+        </label>
+        {scene.vision.enabled && (
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={scene.vision.dynamicFog && scene.fogEnabled}
+              onChange={(e) => send({ type: 'vision:scene', sceneId: scene.id, dynamicFog: e.target.checked })}
+            />
+            Dynamic fog: reveal what players see
+          </label>
+        )}
+        <p className="hint">
+          Walls, closed doors and solid rock block sight. Set light sources and darkvision on tokens; characters bring their own
+          darkvision.{scene.vision.enabled && ' Dynamic fog turns fog of war on and keeps explored areas mapped.'}
+        </p>
       </fieldset>
     </div>
   );
