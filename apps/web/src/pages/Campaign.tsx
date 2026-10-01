@@ -26,6 +26,7 @@ import { SoundboardPanel } from '../components/audio/SoundboardPanel';
 import { useAmbientAudio, useAudioPrefs } from '../components/audio/useAmbientAudio';
 import { HandoutsPanel, ShowcaseStatus } from '../components/handouts/HandoutsPanel';
 import { ShowcaseOverlay, useHandoutNotice, usePlayerShowcase } from '../components/handouts/Showcase';
+import { PopupLayer } from '../components/knowledge/PopupLayer';
 import { useGameSocket, type SocketStatus } from '../lib/useGameSocket';
 
 const STATUS_TEXT: Record<SocketStatus, string> = {
@@ -503,6 +504,8 @@ export function Campaign({ user }: { user: User }) {
       </nav>
 
       {ambient.blocked && <AudioUnlockPrompt onUnlock={ambient.unlock} />}
+
+      <PopupLayer />
 
       {playerShowcase && <ShowcaseOverlay showcase={playerShowcase} onClose={closePlayerShowcase} />}
 

@@ -3370,3 +3370,21 @@ textarea:focus {
   text-decoration: underline wavy rgb(224 106 92 / 0.6);
   cursor: default;
 }
+
+/* Names inside another control (toggle rows, choice cards): keep the control's colour, hint with the underline. */
+.entity-link--quiet {
+  color: inherit;
+  text-decoration-color: rgb(217 164 65 / 0.45);
+}
+
+.entity-link--quiet:hover {
+  color: var(--accent-strong);
+}
+
+/* Table screens: nobody points at the TV, so links read as plain text there. */
+.table .entity-link {
+  color: inherit;
+  text-decoration: none;
+  cursor: default;
+  pointer-events: none;
+}
