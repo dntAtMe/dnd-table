@@ -1598,6 +1598,11 @@ label {
   stroke: rgb(255 196 92 / 0.4);
 }
 
+.vision-preview {
+  max-width: 10rem;
+  font-size: 13px;
+}
+
 .token__disc {
   stroke: rgb(255 255 255 / 0.85);
   stroke-width: 2;

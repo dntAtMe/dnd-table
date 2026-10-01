@@ -1,5 +1,5 @@
-import type { SceneView } from '@dnd/protocol';
-import { BRIGHT, DIM, FogMask, SightMap, illuminate, type GridGeometry, type MapData } from '@dnd/rules';
+import type { SceneView, Token } from '@dnd/protocol';
+import { BRIGHT, DIM, FogMask, SightMap, illuminate, mergeFields, viewField, type GridGeometry, type MapData } from '@dnd/rules';
 import { useMemo } from 'react';
 
 interface Props {
@@ -12,6 +12,14 @@ interface Props {
   /** Current zoom, for constant-width outlines. */
   k: number;
   clipPath: string;
+  /** GM only: show what this player's tokens see, as the server would. */
+  preview?: VisionPreview | null;
+}
+
+export interface VisionPreview {
+  userId: string;
+  /** Darkvision a token gets from its character sheet. */
+  darkvision: (token: Token) => number;
 }
 
 /** SVG path covering every cell for which `test(index)` holds, merged into horizontal runs. */
@@ -39,35 +47,57 @@ function cellsPath(geo: GridGeometry, size: number, test: (i: number) => boolean
  * black under the fog), cells seen only in dim light slightly. The GM sees everything, with the
  * light levels lightly shaded and each light's bright and dim reach outlined.
  */
-export function VisionLayer({ scene, map, geo, size, isGm, k, clipPath }: Props) {
+export function VisionLayer({ scene, map, geo, size, isGm, k, clipPath, preview }: Props) {
   const { vision, visible, dim } = scene;
   const fpc = scene.grid.feetPerCell;
 
+  const lights = useMemo(() => (isGm ? scene.tokens.filter((t) => t.light && t.light.bright + t.light.dim > 0) : []), [isGm, scene.tokens]);
+  /** GM: light levels worked out here with the same rules the server uses. */
+  const gmLight = useMemo(() => {
+    if (!isGm || !vision.enabled) return null;
+    const sight = new SightMap(map);
+    const emitters = lights.map((t) => ({ col: t.col, row: t.row, size: t.size, bright: t.light!.bright, dim: t.light!.dim }));
+    return { sight, level: illuminate(sight, vision.lighting, emitters, fpc) };
+  }, [isGm, vision.enabled, vision.lighting, map, lights, fpc]);
+
   const playerPaths = useMemo(() => {
-    if (isGm || !vision.enabled || visible === undefined) return null;
-    const seen = FogMask.decode(visible, geo.cols, geo.rows);
-    const dimMask = FogMask.decode(dim ?? '', geo.cols, geo.rows);
     const bit = (m: FogMask, i: number) => (m.bits[i >> 3]! & (1 << (i & 7))) !== 0;
-    return {
+    const paths = (seen: FogMask, dimMask: FogMask) => ({
       unseen: cellsPath(geo, size, (i) => !bit(seen, i)),
       dim: cellsPath(geo, size, (i) => bit(dimMask, i)),
-    };
-  }, [isGm, vision.enabled, visible, dim, geo, size]);
+    });
+    if (gmLight && preview) {
+      const eyes = scene.tokens.filter((t) => t.ownerUserId === preview.userId);
+      const fields = eyes.map((t) =>
+        viewField(
+          gmLight.sight,
+          gmLight.level,
+          {
+            col: t.col,
+            row: t.row,
+            size: t.size,
+            darkvision: t.senses?.darkvision ?? preview.darkvision(t),
+            blindsight: t.senses?.blindsight ?? 0,
+            truesight: t.senses?.truesight ?? 0,
+          },
+          fpc,
+        ),
+      );
+      const merged = mergeFields(geo.cols, geo.rows, fields);
+      return paths(merged.visible, merged.dim);
+    }
+    if (isGm || !vision.enabled || visible === undefined) return null;
+    return paths(FogMask.decode(visible, geo.cols, geo.rows), FogMask.decode(dim ?? '', geo.cols, geo.rows));
+  }, [isGm, vision.enabled, visible, dim, geo, size, gmLight, preview, scene.tokens, fpc]);
 
-  const lights = useMemo(() => (isGm ? scene.tokens.filter((t) => t.light && t.light.bright + t.light.dim > 0) : []), [isGm, scene.tokens]);
   const gmPaths = useMemo(() => {
-    if (!isGm || !vision.enabled || vision.lighting === 'bright') return null;
-    const level = illuminate(
-      new SightMap(map),
-      vision.lighting,
-      lights.map((t) => ({ col: t.col, row: t.row, size: t.size, bright: t.light!.bright, dim: t.light!.dim })),
-      fpc,
-    );
+    if (!gmLight || preview || vision.lighting === 'bright') return null;
+    const { level } = gmLight;
     return {
       dark: cellsPath(geo, size, (i) => level[i]! < DIM),
       dim: cellsPath(geo, size, (i) => level[i] === DIM),
     };
-  }, [isGm, vision.enabled, vision.lighting, map, lights, fpc, geo, size]);
+  }, [gmLight, preview, vision.lighting, geo, size]);
 
   if (!playerPaths && !gmPaths && lights.length === 0) return null;
   return (

@@ -11,7 +11,7 @@ import { MapToolbar, type ToolOption } from '../components/map/MapToolbar';
 import { MapView, type MapTool } from '../components/map/MapView';
 import { SceneSettings, ScenesPanel } from '../components/ScenePanels';
 import { AddTokenMenu, TokenInspector } from '../components/TokenPanels';
-import { LightPicker } from '../components/TokenVision';
+import { LightPicker, VisionPreviewPicker, sheetDarkvision } from '../components/TokenVision';
 import { CharacterCreator } from '../components/character/CharacterCreator';
 import { CharacterPanel } from '../components/character/CharacterSheet';
 import { CombatPanel } from '../components/combat/CombatPanel';
@@ -118,6 +118,10 @@ export function Campaign({ user }: { user: User }) {
     if (tableFollows) sendCamera();
   }, [tableFollows, sendCamera]);
   const isGm = hello?.you.role === 'gm';
+  /** GM: whose vision the map previews (null = the GM's own view). */
+  const [previewUserId, setPreviewUserId] = useState<string | null>(null);
+  const darkvisionOf = useMemo(() => sheetDarkvision(state.characters), [state.characters]);
+  const visionPreview = isGm && previewUserId && scene?.vision.enabled ? { userId: previewUserId, darkvision: darkvisionOf } : null;
   const selectedToken = scene?.tokens.find((t) => t.id === selectedTokenId) ?? null;
   const { combat } = state;
   const decorations = useMemo(
@@ -298,6 +302,7 @@ export function Campaign({ user }: { user: User }) {
               secretDoors={secretDoors}
               onMapEdit={send}
               decorations={decorations}
+              visionPreview={visionPreview}
             >
               <MapToolbar
                 tools={isGm ? [...(scene.fogEnabled ? GM_TOOLS : PLAYER_TOOLS), ...EDIT_TOOLS] : PLAYER_TOOLS}
@@ -308,6 +313,9 @@ export function Campaign({ user }: { user: User }) {
               >
                 {isGm && tool === 'terrain' && <TerrainPicker value={terrain} onChange={setTerrain} />}
                 {isGm && tool === 'door' && <SecretDoorToggle secret={secretDoors} onChange={setSecretDoors} />}
+                {isGm && scene.vision.enabled && (
+                  <VisionPreviewPicker members={state.members} value={previewUserId} onChange={setPreviewUserId} />
+                )}
                 {isGm && <AddTokenMenu scene={scene} members={state.members} characters={state.characters} at={viewCentreCell} send={send} />}
                 {isGm && isLive && state.displays.length > 0 && (
                   <button

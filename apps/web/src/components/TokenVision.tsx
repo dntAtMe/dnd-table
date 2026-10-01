@@ -1,4 +1,4 @@
-import type { CharacterRecord, ClientMessage, Token } from '@dnd/protocol';
+import type { CharacterRecord, ClientMessage, Member, Token } from '@dnd/protocol';
 import { LIGHT_PRESETS, computeCharacter, lightPreset, type LightPresetId, type LightSource, type TokenSenses } from '@dnd/rules';
 import { useEffect, useState } from 'react';
 
@@ -106,5 +106,40 @@ export function TokenVisionFields({ token, characters, send }: { token: Token; c
         <FeetInput label="Truesight" value={senses.truesight} placeholder="0" onCommit={(v) => setSense('truesight', v)} />
       </label>
     </fieldset>
+  );
+}
+
+/** Darkvision each character token gets from its sheet (0 for plain tokens and broken sheets). */
+export function sheetDarkvision(characters: CharacterRecord[]): (token: Token) => number {
+  const byId = new Map<string, number>();
+  for (const c of characters) {
+    try {
+      byId.set(c.id, computeCharacter(c.data).darkvision);
+    } catch {
+      byId.set(c.id, 0);
+    }
+  }
+  return (token) => (token.characterId && byId.get(token.characterId)) || 0;
+}
+
+/** GM map toolbar: see the map through one player's tokens. */
+export function VisionPreviewPicker({ members, value, onChange }: { members: Member[]; value: string | null; onChange: (userId: string | null) => void }) {
+  return (
+    <select
+      className="vision-preview"
+      value={value ?? ''}
+      onChange={(e) => onChange(e.target.value || null)}
+      aria-label="Preview a player's vision"
+      title="See the map as one player's tokens see it"
+    >
+      <option value="">GM view</option>
+      {members
+        .filter((m) => m.role === 'player')
+        .map((m) => (
+          <option key={m.userId} value={m.userId}>
+            As {m.name}
+          </option>
+        ))}
+    </select>
   );
 }
