@@ -20,6 +20,7 @@ import {
   type ClientRole,
   type DisplayInfo,
   type LogEntry,
+  type MapMessage,
   type Member,
   type SceneView,
   type ServerMessage,
@@ -27,6 +28,7 @@ import {
   type User,
 } from '@dnd/protocol';
 import type { WebSocket } from 'ws';
+import { applyMapEdit, remapForGrid } from './mapEditor';
 import { GameError, applyGridPatch, clampToGrid, fogMask, sceneView, summary } from './scenes';
 import type { Display, SceneRecord, Store } from './store';
 
@@ -361,7 +363,8 @@ export class Hub {
     const after = gridGeometry(grid, scene.width, scene.height);
     const resized = before.cols !== after.cols || before.rows !== after.rows;
     // A different cell count invalidates the fog mask; start fully fogged again.
-    this.store.updateScene(scene.id, { name: msg.name, grid, fogEnabled: msg.fogEnabled, ...(resized && { fog: '' }) });
+    const reset = resized && { fog: '', map: remapForGrid(scene, before, after) };
+    this.store.updateScene(scene.id, { name: msg.name, grid, fogEnabled: msg.fogEnabled, ...reset });
     if (resized) {
       const updated = { ...scene, grid };
       for (const token of this.store.tokens(scene.id)) {
@@ -418,6 +421,15 @@ export class Hub {
     const pos = clampToGrid(scene, msg.col, msg.row, token.size);
     if (pos.col === token.col && pos.row === token.row) return;
     this.store.updateToken({ ...token, ...pos });
+    this.sceneChanged(conn.campaignId, scene.id);
+  }
+
+  private editMap(conn: Conn & { user: User }, msg: MapMessage): void {
+    const scene = this.sceneOf(conn, msg.sceneId);
+    const inPlay = scene.id === this.store.activeSceneId(conn.campaignId);
+    const change = applyMapEdit(scene, this.store.tokens(scene.id), msg, { role: conn.role, userId: conn.user.id, inPlay });
+    this.store.updateScene(scene.id, change.scene);
+    for (const token of change.tokens ?? []) this.store.updateToken(token);
     this.sceneChanged(conn.campaignId, scene.id);
   }
 
@@ -579,6 +591,14 @@ export class Hub {
         return this.rest(conn, msg);
       case 'character:token':
         return this.placeCharacterToken(conn, msg.characterId);
+      case 'map:walls':
+      case 'map:door':
+      case 'door:toggle':
+      case 'map:terrain':
+      case 'map:fill':
+      case 'map:clear-walls':
+      case 'map:resize':
+        return this.editMap(conn, msg);
       case 'ping':
         return this.ping(conn, msg);
       case 'camera':

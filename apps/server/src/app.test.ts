@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { buildApp } from './app';
 import { openDb } from './db';
+import type { SceneView } from '@dnd/protocol';
+import { FogMask, MapData, gridGeometry, terrainCode, type Edge } from '@dnd/rules';
 
 type App = Awaited<ReturnType<typeof buildApp>>;
 
@@ -418,6 +420,183 @@ describe('scenes and tokens', () => {
     gmSock.send({ type: 'scene:create', name: 'Mine', fileId: mine.id, width: 100, height: 100 });
     const { scenes } = await gmSock.until('scenes', (m) => m.scenes.length === 2);
     expect(scenes[1]).toMatchObject({ name: 'Mine', imageUrl: mine.url });
+  });
+});
+
+describe('map editor', () => {
+  /** GM and player on a blank 10×8 scene (50px cells) that is in play, with the player's token at (1, 1). */
+  async function mapTable() {
+    const { gm, player, campaignId } = await campaignWithPlayer();
+    const gmSock = await gm.socket(`campaign=${campaignId}`);
+    const hello = await gmSock.until('hello');
+    await player.call('POST', '/api/campaigns/join', { inviteCode: hello.campaign.inviteCode });
+    const { data: me } = await player.call('GET', '/api/auth/me');
+    const playerSock = await player.socket(`campaign=${campaignId}`);
+    await playerSock.until('hello');
+    gmSock.send({ type: 'scene:create', name: 'Crypt', fileId: null, width: 500, height: 400, grid: { size: 50 } });
+    const sceneId = (await gmSock.until('scenes')).scenes[0]!.id;
+    gmSock.send({ type: 'scene:activate', sceneId });
+    gmSock.send({ type: 'token:create', sceneId, name: 'Ana', color: '#3366ff', col: 1, row: 1, ownerUserId: me.user.id });
+    const { scene } = await gmSock.until('scene', (m) => m.scene?.tokens.length === 1);
+    await playerSock.until('scene', (m) => m.scene?.tokens.length === 1);
+    return { gm, campaignId, gmSock, playerSock, sceneId, ana: scene!.tokens[0]! };
+  }
+
+  const decode = (scene: SceneView | null) => {
+    const { cols, rows } = gridGeometry(scene!.grid, scene!.width, scene!.height);
+    return MapData.decode(scene!.map, cols, rows);
+  };
+  const tokenAt = (scene: SceneView | null, id: string, col: number, row: number) =>
+    scene?.tokens.some((t) => t.id === id && t.col === col && t.row === row) ?? false;
+
+  it('lets only the GM draw walls, doors and terrain', async () => {
+    const { gmSock, playerSock, sceneId } = await mapTable();
+    const run: Edge[] = [0, 1, 2].map((col) => ({ side: 'top', col, row: 4 }));
+    gmSock.send({ type: 'map:walls', sceneId, edges: run, wall: true });
+    gmSock.send({ type: 'map:door', sceneId, edge: { side: 'top', col: 1, row: 4 }, state: 'closed', secret: false });
+    gmSock.send({ type: 'map:terrain', sceneId, cells: [0, 1, 999], terrain: 'water' });
+    let map = decode((await gmSock.until('scene', (m) => decode(m.scene).terrainAt(1, 0) !== 0)).scene);
+    expect(map.feature({ side: 'top', col: 0, row: 4 })).toEqual({ kind: 'wall' });
+    expect(map.feature({ side: 'top', col: 1, row: 4 })).toEqual({ kind: 'door', state: 'closed', secret: false });
+    expect(map.terrainAt(0, 0)).toBe(terrainCode('water'));
+    expect(map.terrainAt(2, 0)).toBe(0);
+
+    // Erasing clears doors as well as walls.
+    gmSock.send({ type: 'map:walls', sceneId, edges: run.slice(1), wall: false });
+    gmSock.send({ type: 'map:fill', sceneId, terrain: 'rock' });
+    map = decode((await gmSock.until('scene', (m) => decode(m.scene).terrainAt(5, 5) !== 0)).scene);
+    expect([...map.edges()].map((e) => e.edge.col)).toEqual([0]);
+    expect(map.terrainAt(9, 7)).toBe(terrainCode('rock'));
+    gmSock.send({ type: 'map:clear-walls', sceneId });
+    expect(decode((await gmSock.until('scene', (m) => !decode(m.scene).top.some(Boolean))).scene).terrainAt(0, 0)).toBe(terrainCode('rock'));
+
+    for (const msg of [
+      { type: 'map:walls', sceneId, edges: run, wall: true },
+      { type: 'map:door', sceneId, edge: run[0], state: 'open', secret: false },
+      { type: 'map:terrain', sceneId, cells: [0], terrain: 'floor' },
+      { type: 'map:fill', sceneId, terrain: 'none' },
+      { type: 'map:resize', sceneId, top: 1, right: 0, bottom: 0, left: 0 },
+    ]) {
+      playerSock.send(msg);
+      expect(await playerSock.until('error')).toMatchObject({ message: 'Only the GM can do that' });
+    }
+  });
+
+  it('shows players and table screens closed secret doors as walls, and nothing behind the fog', async () => {
+    const { gm, campaignId, gmSock, playerSock, sceneId } = await mapTable();
+    const secret: Edge = { side: 'left', col: 3, row: 2 };
+    gmSock.send({ type: 'map:door', sceneId, edge: secret, state: 'locked', secret: true });
+    const gmMap = decode((await gmSock.until('scene', (m) => m.scene!.map !== '')).scene);
+    expect(gmMap.feature(secret)).toEqual({ kind: 'door', state: 'locked', secret: true });
+    const playerScene = (await playerSock.until('scene', (m) => m.scene!.map !== '')).scene;
+    expect(decode(playerScene).feature(secret)).toEqual({ kind: 'wall' });
+    expect(playerScene!.map).toBe(new MapData(10, 8, { ...gmMap, left: gmMap.left.map((c) => (c ? 1 : 0)) }).encode());
+
+    const { data: display } = await new Client().call('POST', '/api/displays');
+    const tv = await Sock.open(`ws://${base}/ws?display=${display.token}`, '');
+    await tv.until('display:unpaired');
+    await gm.call('POST', `/api/campaigns/${campaignId}/displays`, { code: display.code });
+    expect(decode((await tv.until('hello')).scene).feature(secret)).toEqual({ kind: 'wall' });
+
+    // Once the GM opens it, everyone can see it is a door.
+    gmSock.send({ type: 'door:toggle', sceneId, edge: secret });
+    const opened = await playerSock.until('scene', (m) => decode(m.scene).feature(secret)?.kind === 'door');
+    expect(decode(opened.scene).feature(secret)).toEqual({ kind: 'door', state: 'open', secret: false });
+    expect(decode((await tv.until('scene')).scene).feature(secret)).toMatchObject({ kind: 'door', state: 'open' });
+
+    // With fog on, walls and terrain under it stay on the server.
+    const far: Edge = { side: 'top', col: 8, row: 6 };
+    gmSock.send({ type: 'map:walls', sceneId, edges: [far], wall: true });
+    gmSock.send({ type: 'map:terrain', sceneId, cells: [6 * 10 + 8], terrain: 'water' });
+    gmSock.send({ type: 'scene:update', sceneId, fogEnabled: true });
+    let fogged = await playerSock.until('scene', (m) => m.scene!.fogEnabled);
+    expect(fogged.scene!.map).toBe('');
+    gmSock.send({ type: 'fog:paint', sceneId, cells: [6 * 10 + 8], reveal: true });
+    fogged = await playerSock.until('scene', (m) => m.scene!.map !== '');
+    expect(decode(fogged.scene).blocks(far)).toBe(true);
+    expect(decode(fogged.scene).terrainAt(8, 6)).toBe(terrainCode('water'));
+    tv.close();
+  });
+
+  it('opens and closes doors: GMs any, players unlocked ones next to their token', async () => {
+    const { gmSock, playerSock, sceneId } = await mapTable();
+    const right: Edge = { side: 'left', col: 2, row: 1 };
+    const above: Edge = { side: 'top', col: 1, row: 1 };
+    const hidden: Edge = { side: 'left', col: 1, row: 1 };
+    const far: Edge = { side: 'top', col: 8, row: 6 };
+    gmSock.send({ type: 'map:door', sceneId, edge: right, state: 'closed', secret: false });
+    gmSock.send({ type: 'map:door', sceneId, edge: above, state: 'locked', secret: false });
+    gmSock.send({ type: 'map:door', sceneId, edge: hidden, state: 'closed', secret: true });
+    gmSock.send({ type: 'map:door', sceneId, edge: far, state: 'closed', secret: false });
+    await playerSock.until('scene', (m) => decode(m.scene).feature(far) !== null);
+
+    playerSock.send({ type: 'door:toggle', sceneId, edge: right });
+    await playerSock.until('scene', (m) => decode(m.scene).feature(right)?.kind === 'door' && !decode(m.scene).blocks(right));
+    playerSock.send({ type: 'door:toggle', sceneId, edge: above });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'The door is locked' });
+    playerSock.send({ type: 'door:toggle', sceneId, edge: hidden });
+    expect(await playerSock.until('error')).toMatchObject({ message: "There's no door there" });
+    playerSock.send({ type: 'door:toggle', sceneId, edge: { side: 'top', col: 5, row: 5 } });
+    expect(await playerSock.until('error')).toMatchObject({ message: "There's no door there" });
+    playerSock.send({ type: 'door:toggle', sceneId, edge: far });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'Move your token next to the door first' });
+
+    gmSock.send({ type: 'door:toggle', sceneId, edge: above });
+    const unlocked = await gmSock.until('scene', (m) => decode(m.scene).feature(above)?.kind === 'door' && !decode(m.scene).blocks(above));
+    expect(decode(unlocked.scene).feature(above)).toEqual({ kind: 'door', state: 'open', secret: false });
+    playerSock.send({ type: 'door:toggle', sceneId, edge: right });
+    const closed = await gmSock.until('scene', (m) => decode(m.scene).blocks(right));
+    expect(decode(closed.scene).feature(right)).toEqual({ kind: 'door', state: 'closed', secret: false });
+  });
+
+  it('grows and shrinks blank maps on any side, keeping tokens, fog and walls in place', async () => {
+    const { gm, campaignId, gmSock, playerSock, sceneId, ana } = await mapTable();
+    gmSock.send({ type: 'map:walls', sceneId, edges: [{ side: 'top', col: 1, row: 1 }, { side: 'left', col: 10, row: 7 }], wall: true });
+    gmSock.send({ type: 'map:terrain', sceneId, cells: [2 * 10 + 2], terrain: 'water' });
+    gmSock.send({ type: 'scene:update', sceneId, fogEnabled: true });
+    gmSock.send({ type: 'fog:paint', sceneId, cells: [1 * 10 + 1], reveal: true });
+    await gmSock.until('scene', (m) => m.scene!.fog !== '' && !m.scene!.fog.startsWith('AAAA'));
+
+    gmSock.send({ type: 'map:resize', sceneId, top: 1, right: 0, bottom: 0, left: 2 });
+    const { scene } = await gmSock.until('scene', (m) => m.scene!.width === 600);
+    expect(scene).toMatchObject({ width: 600, height: 450 });
+    expect(scene!.tokens[0]).toMatchObject({ id: ana.id, col: 3, row: 2 });
+    const map = decode(scene);
+    expect([map.cols, map.rows]).toEqual([12, 9]);
+    expect(map.blocks({ side: 'top', col: 3, row: 2 })).toBe(true);
+    expect(map.blocks({ side: 'left', col: 12, row: 8 })).toBe(true);
+    expect(map.terrainAt(4, 3)).toBe(terrainCode('water'));
+    const fog = FogMask.decode(scene!.fog, 12, 9);
+    expect(fog.isRevealed(3, 2)).toBe(true);
+    expect(fog.isRevealed(1, 1)).toBe(false);
+    // Players' copies move too.
+    expect((await playerSock.until('scene', (m) => m.scene!.width === 600)).scene!.tokens[0]).toMatchObject({ col: 3, row: 2 });
+
+    gmSock.send({ type: 'map:resize', sceneId, top: 0, right: 0, bottom: 0, left: -4 });
+    expect(await gmSock.until('error')).toMatchObject({ message: 'Ana is in the way: move it off that edge first' });
+    gmSock.send({ type: 'map:resize', sceneId, top: 0, right: -1, bottom: -8, left: -3 });
+    expect(await gmSock.until('error')).toMatchObject({ type: 'error' });
+    gmSock.send({ type: 'map:resize', sceneId, top: -2, right: -1, bottom: 0, left: -3 });
+    const shrunk = (await gmSock.until('scene', (m) => m.scene!.width === 400)).scene;
+    expect(shrunk).toMatchObject({ width: 400, height: 350 });
+    expect(shrunk!.tokens[0]).toMatchObject({ col: 0, row: 0 });
+    expect([...decode(shrunk).edges()]).toEqual([{ edge: { side: 'top', col: 0, row: 0 }, code: 1 }]);
+
+    // Image maps keep their size.
+    const { data: file } = await gm.call('POST', `/api/campaigns/${campaignId}/files`, new Uint8Array(PNG));
+    gmSock.send({ type: 'scene:create', name: 'Painted', fileId: file.id, width: 700, height: 700 });
+    const painted = (await gmSock.until('scenes', (m) => m.scenes.length === 2)).scenes[1]!.id;
+    gmSock.send({ type: 'map:resize', sceneId: painted, top: 1, right: 0, bottom: 0, left: 0 });
+    expect(await gmSock.until('error')).toMatchObject({ message: 'Only blank maps can be resized' });
+  });
+
+  it('keeps walls anchored to the top-left when grid calibration changes the cell count', async () => {
+    const { gmSock, sceneId } = await mapTable();
+    gmSock.send({ type: 'map:walls', sceneId, edges: [{ side: 'left', col: 2, row: 1 }, { side: 'top', col: 9, row: 7 }], wall: true });
+    await gmSock.until('scene', (m) => m.scene!.map !== '');
+    gmSock.send({ type: 'scene:update', sceneId, grid: { size: 100 } });
+    const { scene } = await gmSock.until('scene', (m) => m.scene!.grid.size === 100);
+    expect([...decode(scene).edges()]).toEqual([{ edge: { side: 'left', col: 2, row: 1 }, code: 1 }]);
   });
 });
 
