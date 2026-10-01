@@ -1,5 +1,8 @@
 // Shapes shared by the server and the web client: REST payloads and WebSocket messages.
 import { z } from 'zod';
+import { MapMessages } from './map';
+
+export * from './map';
 import { ABILITIES, CHARACTER_VERSION, CONDITION_IDS, MAX_EXHAUSTION, SKILL_IDS, type Character, type Grid, type RollResult } from '@dnd/rules';
 
 export type Role = 'gm' | 'player';
@@ -87,6 +90,8 @@ export interface SceneView extends SceneSummary {
   fogEnabled: boolean;
   /** Base64 FogMask of revealed cells (see @dnd/rules). */
   fog: string;
+  /** Encoded MapData: walls, doors and terrain. Players get closed secret doors as walls. */
+  map: string;
   tokens: Token[];
 }
 
@@ -278,6 +283,8 @@ export const ClientMessage = z.discriminatedUnion('type', [
       h: z.number().positive().finite(),
     }),
   }),
+
+  ...MapMessages,
 ]);
 export type ClientMessage = z.infer<typeof ClientMessage>;
 

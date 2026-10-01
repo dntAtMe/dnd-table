@@ -104,6 +104,9 @@ const MIGRATIONS = [
   CREATE INDEX characters_by_campaign ON characters (campaign_id);
   ALTER TABLE tokens ADD COLUMN character_id TEXT REFERENCES characters(id) ON DELETE SET NULL;
   `,
+  `
+  ALTER TABLE scenes ADD COLUMN map TEXT NOT NULL DEFAULT '';
+  `,
 ];
 
 export function openDb(file: string): DB {

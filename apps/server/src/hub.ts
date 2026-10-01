@@ -348,6 +348,7 @@ export class Hub {
       grid,
       fogEnabled: false,
       fog: '',
+      map: '',
     });
     this.scenesChanged(conn.campaignId);
   }

@@ -42,6 +42,8 @@ export interface SceneRecord extends SceneSummary {
   grid: Grid;
   fogEnabled: boolean;
   fog: string;
+  /** Encoded MapData (walls, doors, terrain); '' for none. */
+  map: string;
 }
 
 type Row = Record<string, unknown>;
@@ -284,6 +286,7 @@ export class Store {
       grid: JSON.parse(row.grid as string) as Grid,
       fogEnabled: Boolean(row.fog_enabled),
       fog: row.fog as string,
+      map: row.map as string,
     };
   }
 
@@ -291,8 +294,8 @@ export class Store {
     const id = randomUUID();
     this.db
       .prepare(
-        `INSERT INTO scenes (id, campaign_id, name, file_id, width, height, grid, fog_enabled, fog)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO scenes (id, campaign_id, name, file_id, width, height, grid, fog_enabled, fog, map)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -304,6 +307,7 @@ export class Store {
         JSON.stringify(scene.grid),
         scene.fogEnabled ? 1 : 0,
         scene.fog,
+        scene.map,
       );
     return id;
   }
@@ -318,13 +322,16 @@ export class Store {
     return rows.map(Store.toScene);
   }
 
-  updateScene(id: string, patch: Partial<Pick<SceneRecord, 'name' | 'grid' | 'fogEnabled' | 'fog'>>): void {
+  updateScene(id: string, patch: Partial<Pick<SceneRecord, 'name' | 'grid' | 'fogEnabled' | 'fog' | 'map' | 'width' | 'height'>>): void {
     const sets: string[] = [];
     const values: (string | number)[] = [];
     if (patch.name !== undefined) sets.push('name = ?'), values.push(patch.name);
     if (patch.grid !== undefined) sets.push('grid = ?'), values.push(JSON.stringify(patch.grid));
     if (patch.fogEnabled !== undefined) sets.push('fog_enabled = ?'), values.push(patch.fogEnabled ? 1 : 0);
     if (patch.fog !== undefined) sets.push('fog = ?'), values.push(patch.fog);
+    if (patch.map !== undefined) sets.push('map = ?'), values.push(patch.map);
+    if (patch.width !== undefined) sets.push('width = ?'), values.push(patch.width);
+    if (patch.height !== undefined) sets.push('height = ?'), values.push(patch.height);
     if (sets.length === 0) return;
     this.db.prepare(`UPDATE scenes SET ${sets.join(', ')} WHERE id = ?`).run(...values, id);
   }
@@ -489,7 +496,7 @@ export class Store {
 }
 
 const SCENE_SELECT = `
-  SELECT s.id, s.campaign_id, s.name, s.width, s.height, s.grid, s.fog_enabled, s.fog, f.filename
+  SELECT s.id, s.campaign_id, s.name, s.width, s.height, s.grid, s.fog_enabled, s.fog, s.map, f.filename
   FROM scenes s LEFT JOIN files f ON f.id = s.file_id`;
 
 const TOKEN_SELECT = `

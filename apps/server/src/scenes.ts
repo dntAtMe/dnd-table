@@ -1,5 +1,5 @@
 import type { ClientRole, GridPatch, SceneSummary, SceneView, Token } from '@dnd/protocol';
-import { DEFAULT_GRID, FogMask, GRID_LIMITS, gridGeometry, type Grid } from '@dnd/rules';
+import { DEFAULT_GRID, FogMask, GRID_LIMITS, MapData, gridGeometry, type Grid } from '@dnd/rules';
 import type { z } from 'zod';
 import type { SceneRecord } from './store';
 
@@ -20,6 +20,11 @@ export function fogMask(scene: Pick<SceneRecord, 'grid' | 'width' | 'height' | '
   return scene.fog ? FogMask.decode(scene.fog, cols, rows) : new FogMask(cols, rows);
 }
 
+export function mapData(scene: Pick<SceneRecord, 'grid' | 'width' | 'height' | 'map'>): MapData {
+  const { cols, rows } = gridGeometry(scene.grid, scene.width, scene.height);
+  return MapData.decode(scene.map, cols, rows);
+}
+
 /** Can this viewer see the token? GMs see everything; owners always see their own tokens. */
 export function tokenVisible(token: Token, viewer: Viewer, scene: SceneRecord, fog: FogMask | undefined): boolean {
   if (viewer.role === 'gm') return true;
@@ -37,6 +42,7 @@ export function sceneView(scene: SceneRecord, tokens: Token[], viewer: Viewer): 
     grid: scene.grid,
     fogEnabled: scene.fogEnabled,
     fog: fog ? fog.encode() : '',
+    map: viewer.role === 'gm' || !scene.map ? scene.map : mapData(scene).forPlayers(fog).encode(),
     tokens: tokens.filter((t) => tokenVisible(t, viewer, scene, fog)),
   };
 }
