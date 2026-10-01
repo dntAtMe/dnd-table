@@ -18,6 +18,7 @@ import { InitiativeStrip } from '../components/combat/InitiativeStrip';
 import { CombatantCard } from '../components/combat/InitiativeTracker';
 import { tokenDecorations } from '../components/combat/TokenDecor';
 import { LevelUp } from '../components/character/LevelUp';
+import { SoundboardPanel } from '../components/audio/SoundboardPanel';
 import { HandoutsPanel } from '../components/handouts/HandoutsPanel';
 import { ShowcaseStatus } from '../components/handouts/HandoutsPanel';
 import { ShowcaseOverlay, useHandoutNotice, usePlayerShowcase } from '../components/handouts/Showcase';
@@ -243,6 +244,11 @@ export function Campaign({ user }: { user: User }) {
           {isGm && selectedCombatant && (
             <Section title="In combat">
               <CombatantCard key={selectedCombatant.id} combatant={selectedCombatant} send={send} />
+            </Section>
+          )}
+          {isGm && (
+            <Section title="Soundboard">
+              <SoundboardPanel campaignId={hello.campaign.id} tracks={state.tracks} audio={state.audio} send={send} />
             </Section>
           )}
           {isGm && state.scene && (

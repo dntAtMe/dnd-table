@@ -1,0 +1,200 @@
+/* ---------- soundboard (GM sidebar) ---------- */
+.soundboard {
+  display: grid;
+  gap: 12px;
+}
+
+.soundboard__master {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.soundboard__label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+input[type='range'].volume {
+  flex: 1;
+  min-width: 0;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  accent-color: var(--accent);
+}
+
+.soundboard__group {
+  display: grid;
+  gap: 4px;
+}
+
+.soundboard__kind {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.soundboard__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.soundboard__add {
+  justify-self: start;
+}
+
+.track {
+  display: grid;
+  gap: 2px;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+
+.track--active {
+  background: var(--surface);
+}
+
+.track__main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+}
+
+.track__play,
+.track__stop {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.track__play svg,
+.track__stop svg {
+  width: 12px;
+  height: 12px;
+}
+
+.track--playing .track__play {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.track__stop {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.track__stop:hover {
+  color: var(--text);
+}
+
+.track__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 4px 2px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-size: 14px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.track__loop {
+  margin-left: 6px;
+  color: var(--faint);
+}
+
+.track .volume {
+  margin: 0 4px 4px 36px;
+}
+
+/* Little equaliser bars while a track plays. */
+.track__bars {
+  flex: none;
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+
+.track__bars i {
+  width: 3px;
+  height: 100%;
+  background: var(--accent);
+  animation: eq 0.9s ease-in-out infinite alternate;
+}
+
+.track__bars i:nth-child(2) {
+  animation-delay: -0.3s;
+}
+
+.track__bars i:nth-child(3) {
+  animation-delay: -0.6s;
+}
+
+@keyframes eq {
+  from {
+    transform: scaleY(0.25);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+.track__bars i {
+  transform-origin: bottom;
+}
+
+.track-form {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.track-form .segmented button {
+  padding: 4px 6px;
+  font-size: 13px;
+}
+
+.track-form__row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.track-form__volume {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.track-form__delete {
+  margin-left: auto;
+  color: var(--danger);
+}
