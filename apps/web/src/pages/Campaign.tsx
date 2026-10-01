@@ -408,6 +408,7 @@ export function Campaign({ user }: { user: User }) {
             members={state.members}
             isGm={isGm}
             showcase={state.showcase}
+            active={tab === 'handouts'}
             send={send}
           />
         </section>
@@ -445,7 +446,7 @@ export function Campaign({ user }: { user: User }) {
 
       {playerShowcase && <ShowcaseOverlay showcase={playerShowcase} onClose={closePlayerShowcase} />}
 
-      {handoutNotice && (
+      {handoutNotice && tab !== 'handouts' && (
         <div className="handout-notice" role="status">
           <span className="handout-notice__text">
             <span>{handoutNotice.updated ? 'Handout updated: ' : 'New handout: '}</span>

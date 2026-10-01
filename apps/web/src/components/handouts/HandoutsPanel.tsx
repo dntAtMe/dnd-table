@@ -13,12 +13,14 @@ interface HandoutsPanelProps {
   members: Member[];
   isGm: boolean;
   showcase: Showcase | null;
+  /** Whether the view is on screen; players' handouts only count as read while it is. */
+  active: boolean;
   send: Send;
 }
 
 /** The Handouts view: an authoring desk for the GM, a journal for players. */
 export function HandoutsPanel(props: HandoutsPanelProps) {
-  return props.isGm ? <HandoutDesk {...props} /> : <HandoutJournal handouts={props.handouts} send={props.send} />;
+  return props.isGm ? <HandoutDesk {...props} /> : <HandoutJournal handouts={props.handouts} active={props.active} send={props.send} />;
 }
 
 function formatDate(iso: string | null): string {
@@ -412,13 +414,13 @@ function QuickShow({ campaignId, send }: { campaignId: string; send: Send }) {
 
 // ---------- players ----------
 
-function HandoutJournal({ handouts, send }: { handouts: HandoutView[]; send: Send }) {
+function HandoutJournal({ handouts, active, send }: { handouts: HandoutView[]; active: boolean; send: Send }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const open = handouts.find((h) => h.id === openId);
 
   useEffect(() => {
-    if (open?.unread) send({ type: 'handout:read', handoutId: open.id });
-  }, [open?.id, open?.unread, send]);
+    if (active && open?.unread) send({ type: 'handout:read', handoutId: open.id });
+  }, [active, open?.id, open?.unread, send]);
 
   return (
     <div className={`handouts${open ? ' handouts--open' : ''}`}>
