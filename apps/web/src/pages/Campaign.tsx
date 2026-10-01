@@ -18,6 +18,8 @@ import { InitiativeStrip } from '../components/combat/InitiativeStrip';
 import { CombatantCard } from '../components/combat/InitiativeTracker';
 import { tokenDecorations } from '../components/combat/TokenDecor';
 import { LevelUp } from '../components/character/LevelUp';
+import { HandoutsPanel } from '../components/handouts/HandoutsPanel';
+import { useHandoutNotice } from '../components/handouts/Showcase';
 import { useGameSocket, type SocketStatus } from '../lib/useGameSocket';
 
 const STATUS_TEXT: Record<SocketStatus, string> = {
@@ -44,8 +46,8 @@ function Section({ title, children, className = '', tab }: SectionProps) {
   );
 }
 
-/** 'combat' shares the second phone tab with the sheet (see MobileSwitch). */
-type Tab = 'map' | 'sheet' | 'combat' | 'dice' | 'log' | 'party';
+/** 'combat' and 'handouts' share the second phone tab with the sheet (see MobileSwitch). */
+type Tab = 'map' | 'sheet' | 'combat' | 'handouts' | 'dice' | 'log' | 'party';
 
 const PLAYER_TOOLS: ToolOption[] = [
   { tool: 'move', label: 'Move' },
@@ -60,7 +62,9 @@ const EDIT_TOOLS: ToolOption[] = [
   { tool: 'erase', label: 'Erase' },
 ];
 
-const TAB_LABELS: Record<Tab, string> = { map: 'Map', sheet: 'Sheet', combat: 'Combat', dice: 'Dice', log: 'Log', party: 'Party' };
+const TAB_LABELS: Record<Tab, string> = { map: 'Map', sheet: 'Sheet', combat: 'Combat', handouts: 'Handouts', dice: 'Dice', log: 'Log', party: 'Party' };
+/** Center views other than the map. */
+const CENTER_VIEWS = new Set<Tab>(['sheet', 'combat', 'handouts']);
 
 function MapEmpty({ isGm }: { isGm: boolean }) {
   return (
@@ -117,6 +121,8 @@ export function Campaign({ user }: { user: User }) {
     if (tableFollows) sendCamera();
   }, [tableFollows, sendCamera]);
   const isGm = hello?.you.role === 'gm';
+  const unreadHandouts = isGm ? 0 : state.handouts.filter((h) => h.unread).length;
+  const [handoutNotice, dismissHandoutNotice] = useHandoutNotice(state.handouts, Boolean(hello) && !isGm);
   const selectedToken = scene?.tokens.find((t) => t.id === selectedTokenId) ?? null;
   const { combat } = state;
   const decorations = useMemo(
@@ -262,7 +268,7 @@ export function Campaign({ user }: { user: User }) {
 
         <div className="campaign__center">
         <div className="center-switch" role="tablist" aria-label="Main view">
-          <button type="button" role="tab" aria-selected={tab !== 'sheet' && tab !== 'combat'} className={tab !== 'sheet' && tab !== 'combat' ? 'is-active' : ''} onClick={() => setTab('map')}>
+          <button type="button" role="tab" aria-selected={!CENTER_VIEWS.has(tab)} className={!CENTER_VIEWS.has(tab) ? 'is-active' : ''} onClick={() => setTab('map')}>
             Map
           </button>
           <button type="button" role="tab" aria-selected={tab === 'sheet'} className={tab === 'sheet' ? 'is-active' : ''} onClick={() => setTab('sheet')}>
@@ -271,6 +277,10 @@ export function Campaign({ user }: { user: User }) {
           <button type="button" role="tab" aria-selected={tab === 'combat'} className={tab === 'combat' ? 'is-active' : ''} onClick={() => setTab('combat')}>
             Combat
             {combat && <span className="center-switch__live" aria-label="in progress" />}
+          </button>
+          <button type="button" role="tab" aria-selected={tab === 'handouts'} className={tab === 'handouts' ? 'is-active' : ''} onClick={() => setTab('handouts')}>
+            Handouts
+            {unreadHandouts > 0 && <span className="center-switch__unread" aria-label={`${unreadHandouts} unread`}>{unreadHandouts}</span>}
           </button>
         </div>
         <main className="campaign__map" data-tab="map">
@@ -344,7 +354,7 @@ export function Campaign({ user }: { user: User }) {
           )}
         </main>
         <section className="campaign__sheet" data-tab="sheet">
-          <MobileSwitch tab={tab} setTab={setTab} live={Boolean(combat)} />
+          <MobileSwitch tab={tab} setTab={setTab} live={Boolean(combat)} unread={unreadHandouts} />
           {creating ? (
             <CharacterCreator send={send} onDone={() => setCreating(false)} />
           ) : leveling ? (
@@ -362,8 +372,19 @@ export function Campaign({ user }: { user: User }) {
           )}
         </section>
         <section className="campaign__combat" data-tab="combat">
-          <MobileSwitch tab={tab} setTab={setTab} live={Boolean(combat)} />
+          <MobileSwitch tab={tab} setTab={setTab} live={Boolean(combat)} unread={unreadHandouts} />
           <CombatPanel combat={combat} isGm={isGm} userId={hello.you.userId} characters={state.characters} scene={scene} send={send} />
+        </section>
+        <section className="campaign__handouts" data-tab="handouts">
+          <MobileSwitch tab={tab} setTab={setTab} live={Boolean(combat)} unread={unreadHandouts} />
+          <HandoutsPanel
+            campaignId={hello.campaign.id}
+            handouts={state.handouts}
+            members={state.members}
+            isGm={isGm}
+            showcase={state.showcase}
+            send={send}
+          />
         </section>
         </div>
 
@@ -386,13 +407,36 @@ export function Campaign({ user }: { user: User }) {
           <button
             key={t}
             type="button"
-            className={tab === t || (t === 'sheet' && tab === 'combat') ? 'is-active' : ''}
-            onClick={() => setTab(t === 'sheet' && combat && tab !== 'sheet' ? 'combat' : t)}
+            className={tab === t || (t === 'sheet' && CENTER_VIEWS.has(tab)) ? 'is-active' : ''}
+            onClick={() => setTab(t === 'sheet' && combat && !CENTER_VIEWS.has(tab) ? 'combat' : t)}
           >
             {t === 'party' && isGm ? 'Manage' : t === 'sheet' && combat ? 'Combat' : TAB_LABELS[t]}
+            {t === 'sheet' && unreadHandouts > 0 && <span className="tabbar__dot" aria-label="unread handouts" />}
           </button>
         ))}
       </nav>
+
+      {handoutNotice && (
+        <div className="handout-notice" role="status">
+          <span className="handout-notice__text">
+            <span>{handoutNotice.updated ? 'Handout updated: ' : 'New handout: '}</span>
+            {handoutNotice.title}
+          </span>
+          <button
+            type="button"
+            className="btn btn--sm btn--primary"
+            onClick={() => {
+              setTab('handouts');
+              dismissHandoutNotice();
+            }}
+          >
+            Open
+          </button>
+          <button type="button" className="btn btn--sm btn--ghost" onClick={dismissHandoutNotice} aria-label="Dismiss">
+            ✕
+          </button>
+        </div>
+      )}
 
       {toast && (
         <div className="toast" role="alert">
@@ -403,16 +447,20 @@ export function Campaign({ user }: { user: User }) {
   );
 }
 
-/** Phones: the sheet and the combat tracker share a tab, with this switch at the top. */
-function MobileSwitch({ tab, setTab, live }: { tab: Tab; setTab: (t: Tab) => void; live: boolean }) {
+/** Phones: the sheet, the combat tracker and handouts share a tab, with this switch at the top. */
+function MobileSwitch({ tab, setTab, live, unread }: { tab: Tab; setTab: (t: Tab) => void; live: boolean; unread: number }) {
   return (
-    <div className="segmented segmented--full mobile-switch" role="tablist" aria-label="Sheet or combat">
+    <div className="segmented segmented--full mobile-switch" role="tablist" aria-label="Sheet, combat or handouts">
       <button type="button" role="tab" aria-selected={tab === 'sheet'} className={tab === 'sheet' ? 'is-active' : ''} onClick={() => setTab('sheet')}>
         Sheet
       </button>
       <button type="button" role="tab" aria-selected={tab === 'combat'} className={tab === 'combat' ? 'is-active' : ''} onClick={() => setTab('combat')}>
         Combat
         {live && <span className="center-switch__live" aria-label="in progress" />}
+      </button>
+      <button type="button" role="tab" aria-selected={tab === 'handouts'} className={tab === 'handouts' ? 'is-active' : ''} onClick={() => setTab('handouts')}>
+        Handouts
+        {unread > 0 && <span className="center-switch__unread" aria-label={`${unread} unread`}>{unread}</span>}
       </button>
     </div>
   );
