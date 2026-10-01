@@ -11,3 +11,4 @@ export * from './movement';
 export * from './monsters';
 export * from './srd';
 export * from './vision';
+export * from './wiki';
