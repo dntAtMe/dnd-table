@@ -1,5 +1,7 @@
 import type { CharacterRecord, ClientMessage, Member, SceneView, Token } from '@dnd/protocol';
 import { useEffect, useState } from 'react';
+import { useKnowledge } from '../lib/knowledge';
+import { EntityLink } from './knowledge/EntityLink';
 import { TokenVisionFields } from './TokenVision';
 
 type Send = (msg: ClientMessage) => void;
@@ -19,6 +21,19 @@ interface InspectorProps {
   /** Party characters, for the darkvision a character token gets from its sheet. */
   characters?: CharacterRecord[];
   send: Send;
+}
+
+/** A link to the SRD monster a token is named after ("Goblin Warrior 2" → Goblin Warrior). */
+function TokenReference({ name }: { name: string }) {
+  const { compendium } = useKnowledge();
+  const base = name.replace(/\s*#?\d+$/, '').trim();
+  const entry = compendium.byName(base, 'monster');
+  if (!entry || entry.kind !== 'monster') return null;
+  return (
+    <p className="hint">
+      Stat block: <EntityLink entry={{ kind: 'monster', id: entry.id }}>{entry.name}</EntityLink>
+    </p>
+  );
 }
 
 export function TokenInspector({ token, members, characters = [], send }: InspectorProps) {
@@ -45,6 +60,7 @@ export function TokenInspector({ token, members, characters = [], send }: Inspec
         aria-label="Token name"
         className="plain"
       />
+      {!token.characterId && <TokenReference name={token.name} />}
       <div className="swatches" role="radiogroup" aria-label="Colour">
         {TOKEN_COLORS.map((c) => (
           <button

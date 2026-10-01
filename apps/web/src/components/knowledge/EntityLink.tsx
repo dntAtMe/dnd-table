@@ -14,6 +14,8 @@ interface Props {
    * previews on hover and pins on Ctrl/Cmd-click, but lets plain clicks through to the control.
    */
   hoverOnly?: boolean;
+  /** Accessible name when the content is an icon. */
+  label?: string;
 }
 
 /**
@@ -24,7 +26,7 @@ interface Props {
  * - Touch: a tap pins a popup (a bottom sheet on phones).
  * The popup layer decides how those look. Clicks never reach the surrounding row or card.
  */
-export function EntityLink({ entry, children, className = '', hoverOnly = false }: Props) {
+export function EntityLink({ entry, children, className = '', hoverOnly = false, label }: Props) {
   const k = useKnowledge();
   const ref = useRef<HTMLElement>(null);
   const known = k.compendium.get(entry);
@@ -58,6 +60,7 @@ export function EntityLink({ entry, children, className = '', hoverOnly = false 
     className: classes,
     'data-entry': `${entry.kind}:${entry.id}`,
     title: missing ? `${KIND_LABELS[entry.kind]} not found` : undefined,
+    'aria-label': label,
     onPointerEnter,
     onPointerLeave,
     onClick,
