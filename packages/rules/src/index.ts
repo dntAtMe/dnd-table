@@ -2,6 +2,7 @@ export * from './areas';
 export * from './builder';
 export * from './character';
 export * from './combat';
+export * from './compendium';
 export * from './dice';
 export * from './grid';
 export * from './levelup';
