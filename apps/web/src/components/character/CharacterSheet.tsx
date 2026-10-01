@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { AbilitiesTab, CombatTab, RollControls, Vitals } from './SheetCore';
 import { FeaturesTab, InventoryTab, NotesTab, SpellsTab } from './SheetMore';
 import { useCharacter } from './useCharacter';
+import { MaybeLink } from '../knowledge/EntityLink';
 
 type Send = (msg: ClientMessage) => void;
 type SheetTab = 'abilities' | 'combat' | 'spells' | 'features' | 'inventory' | 'notes';
@@ -22,6 +23,36 @@ export function characterSubtitle(record: CharacterRecord): string {
   const species = (c.subspeciesId && SUBSPECIES[c.subspeciesId]?.name.split(': ').pop()) || SPECIES[c.speciesId]?.name;
   const subclass = c.subclassId ? SUBCLASSES[c.subclassId]?.name : undefined;
   return `Level ${c.level} ${species ?? ''} ${CLASSES[c.classId]?.name ?? c.classId}${subclass ? ` · ${subclass}` : ''}`;
+}
+
+/** The subtitle with species, class, subclass and background linked to the knowledge base. */
+function SubtitleLinks({ record }: { record: CharacterRecord }) {
+  const c = record.data;
+  const lineage = c.subspeciesId ? SUBSPECIES[c.subspeciesId] : undefined;
+  const subclass = c.subclassId ? SUBCLASSES[c.subclassId] : undefined;
+  return (
+    <>
+      Level {c.level}{' '}
+      {lineage ? (
+        <MaybeLink entry={{ kind: 'lineage', id: lineage.id }}>{lineage.name.split(': ').pop()}</MaybeLink>
+      ) : (
+        <MaybeLink entry={{ kind: 'species', id: c.speciesId }}>{SPECIES[c.speciesId]?.name}</MaybeLink>
+      )}{' '}
+      <MaybeLink entry={{ kind: 'class', id: c.classId }}>{CLASSES[c.classId]?.name ?? c.classId}</MaybeLink>
+      {subclass && (
+        <>
+          {' · '}
+          <MaybeLink entry={{ kind: 'subclass', id: subclass.id }}>{subclass.name}</MaybeLink>
+        </>
+      )}
+      {BACKGROUNDS[c.backgroundId] && (
+        <>
+          {' · '}
+          <MaybeLink entry={{ kind: 'background', id: c.backgroundId }}>{BACKGROUNDS[c.backgroundId]!.name}</MaybeLink>
+        </>
+      )}
+    </>
+  );
 }
 
 interface SheetProps {
@@ -51,7 +82,7 @@ export function CharacterSheet({ record, canEdit, send, onLevelUp }: SheetProps)
         <div className="sheet__title">
           <h2>{a.data.name}</h2>
           <p className="muted">
-            {characterSubtitle(record)} · {BACKGROUNDS[a.data.backgroundId]?.name}
+            <SubtitleLinks record={record} />
           </p>
         </div>
         {canEdit && (

@@ -3,16 +3,27 @@ import { Fragment } from 'react';
 import { useLinkedText } from '../../lib/knowledge';
 import { EntityLink } from './EntityLink';
 
+interface Props {
+  text: string;
+  /** The entry this text describes: not linked to itself. */
+  self?: EntryRef;
+  className?: string;
+  /** A span instead of a div, for text inside a line. */
+  inline?: boolean;
+  /** For text inside a button or label: links preview on hover and pin on Ctrl/Cmd-click only. */
+  hoverOnly?: boolean;
+}
+
 /**
  * Plain text with knowledge base links: names found automatically and explicit [[links]].
  * Blank lines become paragraphs, single newlines line breaks, **bold** runs bold. Never renders
  * HTML from the text.
  */
-export function RichText({ text, self, className = '', inline = false }: { text: string; self?: EntryRef; className?: string; inline?: boolean }) {
+export function RichText({ text, self, className = '', inline = false, hoverOnly = false }: Props) {
   const segments = useLinkedText(text, self);
   const content = segments.map((seg, i) =>
     seg.ref ? (
-      <EntityLink key={i} entry={seg.ref}>
+      <EntityLink key={i} entry={seg.ref} hoverOnly={hoverOnly}>
         {seg.text}
       </EntityLink>
     ) : seg.broken ? (
