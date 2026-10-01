@@ -12,7 +12,7 @@
   display: flex;
   flex-direction: column;
   width: min(420px, calc(100vw - 16px));
-  max-height: min(72vh, 580px);
+  max-height: min(72vh, 580px, var(--kb-room, 100vh));
   overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -154,17 +154,13 @@
   cursor: pointer;
 }
 
-.kb-icon-btn:hover:not(.kb-icon-btn--static) {
+.kb-icon-btn:hover {
   background: var(--surface-3);
   color: var(--text);
 }
 
 .kb-icon-btn:disabled {
   opacity: 0.35;
-  cursor: default;
-}
-
-.kb-icon-btn--static {
   cursor: default;
 }
 
@@ -471,4 +467,15 @@
   font-size: 12px;
   cursor: pointer;
   text-decoration: underline;
+}
+
+/* Popups move by their header (desktop). */
+.kb-popup.is-movable .kb-card__head {
+  cursor: grab;
+}
+
+.kb-popup.is-dragging,
+.kb-popup.is-dragging .kb-card__head {
+  cursor: grabbing;
+  user-select: none;
 }

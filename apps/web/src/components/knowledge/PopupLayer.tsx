@@ -1,5 +1,5 @@
 import { KIND_LABELS, type EntryRef } from '@dnd/rules';
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useKnowledge, useKnowledgeHandlers, useStableHandlers } from '../../lib/knowledge';
 import { EntryCard } from './EntryCard';
@@ -8,8 +8,10 @@ import {
   closePopup,
   closeTop,
   depth,
+  findPopup,
   openPopup,
   pinPopup,
+  unpinPopup,
   placePopup,
   pruneHover,
   raisePopup,
@@ -59,11 +61,13 @@ interface Props {
  *   preview keeps it open; leaving both closes it after a short grace period. A nested preview
  *   also stays while the pointer crosses its parent popup towards it.
  * - Pin: clicking a link (plain or Ctrl/Cmd), clicking inside a preview, its pin button or Space
- *   while a preview shows pins it. Pinned popups stay until closed (×, Escape for the topmost).
+ *   while a preview shows pins it. Pinned popups stay until closed (×, Escape for the topmost);
+ *   the pin button unpins them again.
  *   A click elsewhere closes unpinned previews only.
  * - Nesting: links inside a popup open popups beside it (preview or pinned, same rules). Pinning a
  *   nested popup pins the chain it came from; closing a popup closes the ones opened from it.
  *   Six levels deep, a link replaces the deepest popup's content instead.
+ * - Moving: drag a popup by its header (desktop); it then stays where you put it.
  * - Touch / phones: a tap pins; on narrow screens popups are bottom sheets over a backdrop.
  * - Shift-click (Shift+Enter) on a link, or "Open in Compendium", goes to the Compendium view.
  */
@@ -159,7 +163,9 @@ export function PopupLayer({ onShow }: Props) {
       const target = e.target as Element | null;
       const pid = popupIdOf(target);
       if (pid !== null) {
-        setStack((s) => raisePopup(pinPopup(s, pid), pid));
+        // The pin button toggles on its own click, so pressing it mustn't pin first.
+        const onToggle = Boolean(target?.closest?.('[data-pin-toggle]'));
+        setStack((s) => raisePopup(onToggle ? s : pinPopup(s, pid), pid));
         return;
       }
       if (target?.closest?.('.entity-link, [data-kb-modal]')) return;
@@ -190,7 +196,7 @@ export function PopupLayer({ onShow }: Props) {
           level={depth(stack, p.id)}
           sheet={sheet}
           onClose={() => setStack((s) => closePopup(s, p.id))}
-          onPin={() => setStack((s) => pinPopup(s, p.id))}
+          onTogglePin={() => setStack((s) => (findPopup(s, p.id)?.pinned ? unpinPopup(s, p.id) : pinPopup(s, p.id)))}
           onEnter={() => {
             pointerIn.current = p.id;
             cancelPrune();
@@ -212,14 +218,20 @@ interface FrameProps {
   level: number;
   sheet: boolean;
   onClose: () => void;
-  onPin: () => void;
+  onTogglePin: () => void;
   onEnter: () => void;
   onLeave: () => void;
 }
 
-function PopupFrame({ popup, index, level, sheet, onClose, onPin, onEnter, onLeave }: FrameProps) {
+/** How much of a dragged popup (px) must stay on screen. */
+const DRAG_KEEP = 80;
+
+function PopupFrame({ popup, index, level, sheet, onClose, onTogglePin, onEnter, onLeave }: FrameProps) {
   const el = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<Placement | null>(null);
+  /** Where the user dragged the popup, which then replaces the automatic placement. */
+  const [moved, setMoved] = useState<{ left: number; top: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
   const { compendium } = useKnowledge();
   const name = compendium.get(popup.ref)?.name ?? KIND_LABELS[popup.ref.kind];
 
@@ -247,18 +259,54 @@ function PopupFrame({ popup, index, level, sheet, onClose, onPin, onEnter, onLea
     };
   }, [popup.anchor, popup.beside, sheet]);
 
+  // Dragging by the header (not its buttons or links). Pressing inside already pins the popup.
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const node = el.current;
+    const target = e.target as Element;
+    if (sheet || !node || e.button !== 0 || !target.closest('.kb-card__head') || target.closest('button, a, input, select, .entity-link')) return;
+    e.preventDefault(); // no text selection while dragging
+    const box = node.getBoundingClientRect();
+    const grab = { x: e.clientX - box.left, y: e.clientY - box.top };
+    const move = (ev: PointerEvent) => {
+      // Keep the header on screen so the popup can always be grabbed again.
+      const left = Math.min(Math.max(ev.clientX - grab.x, DRAG_KEEP - box.width), window.innerWidth - DRAG_KEEP);
+      const top = Math.min(Math.max(ev.clientY - grab.y, 0), window.innerHeight - DRAG_KEEP);
+      setMoved({ left, top });
+    };
+    const end = () => {
+      setDragging(false);
+      node.removeEventListener('pointermove', move);
+      node.removeEventListener('pointerup', end);
+      node.removeEventListener('pointercancel', end);
+    };
+    node.setPointerCapture(e.pointerId);
+    node.addEventListener('pointermove', move);
+    node.addEventListener('pointerup', end);
+    node.addEventListener('pointercancel', end);
+    setDragging(true);
+  };
+
+  const at = moved ?? pos;
   const style = sheet
     ? { zIndex: 81 + index, ['--kb-level' as string]: level }
-    : { zIndex: 81 + index, left: pos?.left ?? 0, top: pos?.top ?? 0, visibility: pos ? undefined : ('hidden' as const) };
+    : {
+        zIndex: 81 + index,
+        left: at?.left ?? 0,
+        top: at?.top ?? 0,
+        visibility: at ? undefined : ('hidden' as const),
+        // A popup dragged low shrinks to the space below it, so its end can still be scrolled to.
+        ...(moved && { ['--kb-room' as string]: `${Math.max(DRAG_KEEP * 2, window.innerHeight - moved.top - 8)}px` }),
+      };
 
   return (
     <div
       ref={el}
-      className={`kb-popup${popup.pinned ? ' is-pinned' : ''}${level > 1 ? ' is-nested' : ''}${pos ? ` kb-popup--${pos.side}` : ''}`}
+      className={`kb-popup${popup.pinned ? ' is-pinned' : ''}${level > 1 ? ' is-nested' : ''}${pos && !moved ? ` kb-popup--${pos.side}` : ''}${sheet ? '' : ' is-movable'}${dragging ? ' is-dragging' : ''}`}
       data-popup-id={popup.id}
       role="dialog"
       aria-label={name}
       style={style}
+      onPointerDown={onPointerDown}
       onPointerEnter={(e) => e.pointerType === 'mouse' && onEnter()}
       onPointerLeave={(e) => e.pointerType === 'mouse' && onLeave()}
     >
@@ -268,15 +316,17 @@ function PopupFrame({ popup, index, level, sheet, onClose, onPin, onEnter, onLea
         size="popup"
         actions={
           <>
-            {popup.pinned ? (
-              <span className="kb-icon-btn kb-icon-btn--static is-on" title="Pinned: stays until you close it" aria-label="Pinned">
-                <PinIcon />
-              </span>
-            ) : (
-              <button type="button" className="kb-icon-btn" onClick={onPin} title="Pin (Space or click inside)" aria-label="Pin">
-                <PinIcon />
-              </button>
-            )}
+            <button
+              type="button"
+              className={`kb-icon-btn${popup.pinned ? ' is-on' : ''}`}
+              onClick={onTogglePin}
+              aria-pressed={popup.pinned}
+              aria-label="Pin"
+              title={popup.pinned ? 'Pinned: stays until you close it. Click to unpin' : 'Pin (Space or click inside)'}
+              data-pin-toggle
+            >
+              <PinIcon />
+            </button>
             <button type="button" className="kb-icon-btn" onClick={onClose} title="Close (Esc)" aria-label="Close">
               ×
             </button>

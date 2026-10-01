@@ -124,6 +124,16 @@ export function pinPopup(stack: PopupStack, id: number): PopupStack {
   return findPopup(stack, id) ? pinLineage(stack, id) : stack;
 }
 
+/**
+ * Unpins a popup and the popups opened from it, so they behave as previews again: they close once
+ * the pointer leaves or on a click elsewhere. The popups it was opened from stay as they are.
+ */
+export function unpinPopup(stack: PopupStack, id: number): PopupStack {
+  if (!findPopup(stack, id)) return stack;
+  const ids = new Set([id, ...descendants(stack, id)]);
+  return { ...stack, items: stack.items.map((p) => (ids.has(p.id) && p.pinned ? { ...p, pinned: false } : p)) };
+}
+
 /** Closes a popup and everything opened from it. */
 export function closePopup(stack: PopupStack, id: number): PopupStack {
   return without(stack, [id]);
