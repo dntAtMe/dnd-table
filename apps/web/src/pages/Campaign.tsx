@@ -29,6 +29,7 @@ import { ShowcaseOverlay, useHandoutNotice, usePlayerShowcase } from '../compone
 import { CompendiumView } from '../components/knowledge/CompendiumView';
 import { useEntryHistory } from '../components/knowledge/history';
 import { PopupLayer } from '../components/knowledge/PopupLayer';
+import { QuickSearch, useQuickSearchShortcut } from '../components/knowledge/QuickSearch';
 import { useGameSocket, type SocketStatus } from '../lib/useGameSocket';
 
 const STATUS_TEXT: Record<SocketStatus, string> = {
@@ -109,6 +110,9 @@ export function Campaign({ user }: { user: User }) {
     },
     [compendiumHistory],
   );
+  const [searching, setSearching] = useState(false);
+  const toggleSearch = useCallback(() => setSearching((s) => !s), []);
+  useQuickSearchShortcut(toggleSearch);
   const [toast, setToast] = useState<string>();
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
   const [tool, setTool] = useState<MapTool>('move');
@@ -272,6 +276,12 @@ export function Campaign({ user }: { user: User }) {
         <h1 className="topbar__title">{hello.campaign.name}</h1>
         <span className={`badge ${isGm ? 'badge--gm' : ''}`}>{isGm ? 'GM' : 'Player'}</span>
         <div className="topbar__right">
+          <button type="button" className="topbar__search" onClick={() => setSearching(true)} aria-label="Search the compendium" title="Search the compendium (Ctrl/⌘ K)">
+            <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+              <circle cx="8.5" cy="8.5" r="5.5" />
+              <path d="m13 13 4.5 4.5" />
+            </svg>
+          </button>
           <AudioControl
             audio={state.audio}
             prefs={audioPrefs}
@@ -532,6 +542,7 @@ export function Campaign({ user }: { user: User }) {
       {ambient.blocked && <AudioUnlockPrompt onUnlock={ambient.unlock} />}
 
       <PopupLayer onShow={showInCompendium} />
+      {searching && <QuickSearch onClose={() => setSearching(false)} />}
 
       {playerShowcase && <ShowcaseOverlay showcase={playerShowcase} onClose={closePlayerShowcase} />}
 
