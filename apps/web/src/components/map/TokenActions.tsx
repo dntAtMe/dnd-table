@@ -1,4 +1,4 @@
-import type { CharacterRecord, ClientMessage, CombatView, CombatantView, Token } from '@dnd/protocol';
+import type { CharacterRecord, ClientMessage, CombatView, CombatantView, Member, Token } from '@dnd/protocol';
 import {
   ABILITIES,
   ABILITY_NAMES,
@@ -19,7 +19,7 @@ import {
   type MonsterDef,
   type Skill,
 } from '@dnd/rules';
-import { useMemo, useState, type CSSProperties, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { useKnowledge } from '../../lib/knowledge';
 import { characterSubtitle } from '../character/CharacterSheet';
 import { signed, useCharacter, type CharacterActions } from '../character/useCharacter';
@@ -28,6 +28,7 @@ import { STATUS_LABEL } from '../combat/InitiativeStrip';
 import { ActionEntry, useMonsterRolls } from '../combat/StatBlock';
 import { useMonsters } from '../combat/useMonsters';
 import { EntityLink, MaybeLink } from '../knowledge/EntityLink';
+import { TokenInspector } from '../TokenPanels';
 import { LightPicker } from '../TokenVision';
 import './tokenActions.css';
 
@@ -42,6 +43,8 @@ export interface TokenActionsProps {
   token: Token;
   combat: CombatView | null;
   characters: CharacterRecord[];
+  /** For the GM's "Controlled by" setting. */
+  members: Member[];
   isGm: boolean;
   userId?: string;
   send: Send;
@@ -67,8 +70,15 @@ export function monsterIdForName(compendium: Compendium, name: string): string |
  * rolls (a character's from its sheet, a monster's from its stat block), and GM token controls.
  * Players see a read-only card for creatures they don't control.
  */
-export function TokenActions({ token, combat, characters, isGm, userId, send, onClose, onOpenSheet }: TokenActionsProps) {
+export function TokenActions({ token, combat, characters, members, isGm, userId, send, onClose, onOpenSheet }: TokenActionsProps) {
   const { compendium } = useKnowledge();
+  /** GM: showing the token's settings (name, colour, size, owner, vision) instead of its actions. */
+  const [editing, setEditing] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  // Switching between actions and settings starts the new view at its top.
+  useEffect(() => {
+    rootRef.current?.closest('.token-popup')?.scrollTo({ top: 0 });
+  }, [editing]);
   const combatant = combatantFor(combat, token);
   const character = token.characterId ? characters.find((c) => c.id === token.characterId) : undefined;
   const canControl = isGm || (userId !== undefined && (token.ownerUserId === userId || character?.ownerUserId === userId));
@@ -119,7 +129,7 @@ export function TokenActions({ token, combat, characters, isGm, userId, send, on
   const subtitle = character ? characterSubtitle(character) : monster ? `CR ${formatCr(monster.cr)} · ${monster.size} ${monster.type}` : null;
 
   return (
-    <div className="token-actions" style={{ '--token-color': token.color } as CSSProperties} role="dialog" aria-label={`${token.name}: quick actions`}>
+    <div ref={rootRef} className="token-actions" style={{ '--token-color': token.color } as CSSProperties} role="dialog" aria-label={`${token.name}: quick actions`}>
       <header className="token-actions__head">
         <span className="token-actions__dot" aria-hidden="true" />
         <div className="token-actions__title">
@@ -133,6 +143,20 @@ export function TokenActions({ token, combat, characters, isGm, userId, send, on
           ✕
         </button>
       </header>
+
+      {editing ? (
+        <>
+          <div className="token-actions__settings">
+            <TokenInspector token={token} members={members} characters={characters} send={send} />
+          </div>
+          <footer className="token-actions__foot">
+            <button type="button" className="btn btn--sm" onClick={() => setEditing(false)}>
+              ← Back to actions
+            </button>
+          </footer>
+        </>
+      ) : (
+        <>
 
       <div className="token-actions__vitals">
         {ac != null && (
@@ -248,11 +272,11 @@ export function TokenActions({ token, combat, characters, isGm, userId, send, on
           </button>
         )}
         {isGm && (
-          <button type="button" className="btn btn--sm btn--ghost btn--danger" onClick={() => send({ type: 'token:delete', tokenId: token.id })} title="Remove the token (Delete)">
-            Delete
+          <button type="button" className="btn btn--sm btn--ghost" onClick={() => setEditing(true)} title="Name, colour, size, owner, light and vision">
+            Edit token
           </button>
         )}
-        {canControl && (
+        {canControl && !isGm && (
           <details className="token-actions__more">
             <summary>Light</summary>
             <LightPicker token={token} send={send} />
@@ -260,6 +284,8 @@ export function TokenActions({ token, combat, characters, isGm, userId, send, on
         )}
       </footer>
       {!canControl && !combatant && !character && <p className="hint">You don't control this creature.</p>}
+        </>
+      )}
     </div>
   );
 }
