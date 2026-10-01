@@ -1,8 +1,11 @@
 import type { LogEntry, NewDisplay } from '@dnd/protocol';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RollView } from '../components/RollView';
+import { AudioUnlockPrompt, NowPlaying } from '../components/audio/AudioControls';
+import { useAmbientAudio, useAudioPrefs } from '../components/audio/useAmbientAudio';
 import { InitiativeStrip } from '../components/combat/InitiativeStrip';
 import { tokenDecorations } from '../components/combat/TokenDecor';
+import { ShowcaseOverlay } from '../components/handouts/Showcase';
 import { MapView } from '../components/map/MapView';
 import { api, errorMessage } from '../lib/api';
 import { useGameSocket } from '../lib/useGameSocket';
@@ -73,6 +76,28 @@ export function Table() {
   const [spotlight, setSpotlight] = useState<Extract<LogEntry, { kind: 'roll' }>>();
   const lastSeen = useRef<number | null>(null);
   const decorations = useMemo(() => tokenDecorations(state.combat, state.scene?.tokens ?? [], { isGm: false }), [state.combat, state.scene?.tokens]);
+  // Table screens play the GM's audio unless muted on this screen.
+  const [audioPrefs, setAudioPrefs] = useAudioPrefs('display');
+  const ambient = useAmbientAudio({
+    audio: state.audio,
+    clockOffset: state.clockOffset,
+    effect: state.effect,
+    enabled: Boolean(state.hello) && audioPrefs.enabled,
+    volume: audioPrefs.volume,
+  });
+
+  // Browsers only allow sound after an interaction: any click or key on the TV unlocks it.
+  const { blocked, unlock } = ambient;
+  useEffect(() => {
+    if (!blocked) return;
+    const onGesture = () => unlock();
+    window.addEventListener('pointerdown', onGesture);
+    window.addEventListener('keydown', onGesture);
+    return () => {
+      window.removeEventListener('pointerdown', onGesture);
+      window.removeEventListener('keydown', onGesture);
+    };
+  }, [blocked, unlock]);
 
   // The server forgot this display (e.g. a fresh database): get a new identity.
   const failed = Boolean(state.failure);
@@ -161,6 +186,15 @@ export function Table() {
               </li>
             ))}
         </ul>
+        <NowPlaying
+          audio={state.audio}
+          muted={!audioPrefs.enabled}
+          onToggle={() => {
+            const enabled = !audioPrefs.enabled;
+            setAudioPrefs({ enabled });
+            if (enabled) unlock(true);
+          }}
+        />
         <button type="button" className="btn btn--ghost btn--sm table__fs" onClick={fullscreen}>
           Fullscreen
         </button>
@@ -185,12 +219,15 @@ export function Table() {
             <InitiativeStrip combat={state.combat} size="lg" max={7} />
           </div>
         )}
+        {state.showcase && <ShowcaseOverlay showcase={state.showcase} />}
         {spotlight && (
-          <div className={`table__spotlight${state.scene ? ' table__spotlight--over-map' : ''}`}>
+          <div className={`table__spotlight${state.scene || state.showcase ? ' table__spotlight--over-map' : ''}`}>
             <Spotlight entry={spotlight} />
           </div>
         )}
       </main>
+
+      {blocked && <AudioUnlockPrompt onUnlock={unlock} className="audio-unlock--table" />}
 
       <aside className="table__log">
         <h2>Recent rolls</h2>

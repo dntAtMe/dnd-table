@@ -22,11 +22,11 @@ import type { DB } from './db';
 import { Hub } from './hub';
 import { hashPassword, normalizeCode, verifyPassword } from './security';
 import { Store } from './store';
-import { MAX_UPLOAD_BYTES, UPLOAD_MIME_TYPES, sniffImage } from './uploads';
+import { MAX_BYTES, MAX_UPLOAD_BYTES, UPLOAD_MIME_TYPES, sniffUpload } from './uploads';
 
 export interface AppOptions {
   db: DB;
-  /** Where uploaded images are written; served under /files/. */
+  /** Where uploaded images and audio are written; served under /files/. */
   uploadsDir: string;
   /** Built web client to serve (apps/web/dist). Omitted in dev, where Vite serves it. */
   webDist?: string;
@@ -172,14 +172,18 @@ export async function buildApp(opts: AppOptions) {
 
   app.post<{ Params: { id: string } }>('/api/campaigns/:id/files', async (req) => {
     requireGm(req, req.params.id);
-    if (!Buffer.isBuffer(req.body)) throw new HttpError(415, 'Upload a PNG, JPEG, WebP or GIF image');
-    const kind = sniffImage(req.body);
-    if (!kind) throw new HttpError(415, 'Upload a PNG, JPEG, WebP or GIF image');
+    const unsupported = 'Upload an image (PNG, JPEG, WebP, GIF) or audio (MP3, OGG, WAV, M4A, FLAC)';
+    if (!Buffer.isBuffer(req.body)) throw new HttpError(415, unsupported);
+    const kind = sniffUpload(req.body);
+    if (!kind) throw new HttpError(415, unsupported);
+    if (req.body.length > MAX_BYTES[kind.kind]) {
+      throw new HttpError(413, `That ${kind.kind} is too large (max ${MAX_BYTES[kind.kind] / 1024 / 1024} MB)`);
+    }
     const id = randomUUID();
     const filename = `${id}.${kind.ext}`;
     await writeFile(path.join(opts.uploadsDir, filename), req.body);
     store.addFile({ id, campaignId: req.params.id, filename, mime: kind.mime, bytes: req.body.length });
-    return { id, url: `/files/${filename}` };
+    return { id, url: `/files/${filename}`, kind: kind.kind, mime: kind.mime };
   });
 
   // ---------- table displays ----------

@@ -28,7 +28,9 @@ import {
   type User,
 } from '@dnd/protocol';
 import type { WebSocket } from 'ws';
+import { Soundboard, isAudioMessage } from './audio';
 import { CombatTracker, isCombatMessage } from './combat';
+import { Handouts, isHandoutMessage } from './handouts';
 import { applyMapEdit, checkPlayerMove, remapForGrid } from './mapEditor';
 import { GameError, applyGridPatch, clampToGrid, fogMask, summary } from './scenes';
 import type { Display, SceneRecord, Store } from './store';
@@ -72,8 +74,16 @@ export class Hub {
   private readonly heartbeat: NodeJS.Timeout;
   private readonly combat: CombatTracker<Conn>;
   private readonly vision: VisionTracker<Conn>;
+  private readonly handouts: Handouts<Conn>;
+  private readonly audio: Soundboard<Conn>;
 
   constructor(private readonly store: Store) {
+    const host = {
+      connections: (campaignId: string) => this.rooms.get(campaignId) ?? [],
+      send: (conn: Conn, msg: ServerMessage) => send(conn.socket, msg),
+    };
+    this.handouts = new Handouts<Conn>(store, host);
+    this.audio = new Soundboard<Conn>(store, host);
     this.combat = new CombatTracker<Conn>(store, {
       broadcast: (campaignId, build) => {
         for (const conn of this.rooms.get(campaignId) ?? []) send(conn.socket, build(conn));
@@ -180,6 +190,10 @@ export class Hub {
       ...(isGm && { scenes: this.store.scenes(conn.campaignId).map(summary) }),
       characters: this.charactersFor(conn),
       combat: this.combat.viewFor(conn),
+      handouts: this.handouts.viewFor(conn),
+      showcase: this.handouts.showcaseFor(conn),
+      audio: this.audio.stateFor(conn.campaignId),
+      ...(isGm && { tracks: this.audio.tracks(conn.campaignId) }),
     });
   }
 
@@ -360,7 +374,8 @@ export class Hub {
 
   private createScene(conn: Conn, msg: Msg<'scene:create'>): void {
     this.requireGm(conn);
-    if (msg.fileId && this.store.getFile(msg.fileId)?.campaignId !== conn.campaignId) {
+    const file = msg.fileId ? this.store.getFile(msg.fileId) : undefined;
+    if (msg.fileId && (file?.campaignId !== conn.campaignId || !file.mime.startsWith('image/'))) {
       throw new GameError('Map image not found');
     }
     const grid = applyGridPatch(DEFAULT_GRID, msg.grid, msg.width, msg.height);
@@ -557,6 +572,8 @@ export class Hub {
       const actor = { role: conn.role, userId: conn.user.id, campaignId: conn.campaignId, activeSceneId };
       return this.sceneChanged(conn.campaignId, applyTemplateMessage(this.store, msg, actor));
     }
+    if (isHandoutMessage(msg)) return this.handouts.handle(conn, msg);
+    if (isAudioMessage(msg)) return this.audio.handle(conn, msg);
     switch (msg.type) {
       case 'roll': {
         const roll = rollDice(msg.expr);

@@ -1,9 +1,13 @@
 // Shapes shared by the server and the web client: REST payloads and WebSocket messages.
 import { z } from 'zod';
+import { AudioMessages, type AudioServerMessage, type AudioState, type Track } from './audio';
+import { HandoutMessages, type HandoutServerMessage, type HandoutView, type Showcase } from './handouts';
 import { MapMessages } from './map';
 import { TemplateMessages, type MapTemplate } from './templates';
 import { VisionMessages } from './vision';
 
+export * from './audio';
+export * from './handouts';
 export * from './map';
 export * from './templates';
 export * from './vision';
@@ -396,6 +400,8 @@ export const ClientMessage = z.discriminatedUnion('type', [
   ...MapMessages,
   ...VisionMessages,
   ...TemplateMessages,
+  ...HandoutMessages,
+  ...AudioMessages,
 ]);
 export type ClientMessage = z.infer<typeof ClientMessage>;
 
@@ -446,6 +452,14 @@ export interface Hello {
   characters: CharacterRecord[];
   /** The running encounter, filtered for this client. */
   combat: CombatView | null;
+  /** GMs get every handout; players those shared with them; table screens none. */
+  handouts: HandoutView[];
+  /** What is shown over the map (players only get it when it's shown to them too). */
+  showcase: Showcase | null;
+  /** What's playing. */
+  audio: AudioState;
+  /** Only sent to GMs: the soundboard. */
+  tracks?: Track[];
 }
 
 export type ServerMessage =
@@ -461,7 +475,9 @@ export type ServerMessage =
   | { type: 'characters'; characters: CharacterRecord[] }
   | { type: 'combat'; combat: CombatView | null }
   /** Sent to a table display that is not (or no longer) paired with a campaign. */
-  | { type: 'display:unpaired'; code: string };
+  | { type: 'display:unpaired'; code: string }
+  | HandoutServerMessage
+  | AudioServerMessage;
 
 /** WebSocket close codes used by the server. */
 export const CloseCode = {

@@ -135,6 +135,42 @@ const MIGRATIONS = [
   );
   CREATE INDEX templates_by_scene ON templates (scene_id, created_at);
   `,
+  `
+  CREATE TABLE handouts (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    text TEXT NOT NULL DEFAULT '',
+    file_id TEXT REFERENCES files(id) ON DELETE SET NULL,
+    audience TEXT NOT NULL DEFAULT 'gm' CHECK (audience IN ('gm', 'all', 'players')),
+    revised_at TEXT,
+    created_at TEXT NOT NULL DEFAULT ${NOW}
+  );
+  CREATE INDEX handouts_by_campaign ON handouts (campaign_id, created_at);
+  CREATE TABLE handout_recipients (
+    handout_id TEXT NOT NULL REFERENCES handouts(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (handout_id, user_id)
+  );
+  CREATE TABLE handout_reads (
+    handout_id TEXT NOT NULL REFERENCES handouts(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    read_at TEXT NOT NULL,
+    PRIMARY KEY (handout_id, user_id)
+  );
+  CREATE TABLE tracks (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    file_id TEXT NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('music', 'ambience', 'effect')),
+    loop INTEGER NOT NULL DEFAULT 0,
+    volume REAL NOT NULL DEFAULT 1,
+    duration REAL,
+    created_at TEXT NOT NULL DEFAULT ${NOW}
+  );
+  CREATE INDEX tracks_by_campaign ON tracks (campaign_id, created_at);
+  `,
 ];
 
 export function openDb(file: string): DB {

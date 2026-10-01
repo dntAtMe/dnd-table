@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { CampaignSummary, CharacterRecord, LogEntry, MapTemplate, Role, SceneSummary, Token, User, Visibility } from '@dnd/protocol';
+import type { CampaignSummary, CharacterRecord, HandoutAudience, LogEntry, MapTemplate, Role, SceneSummary, Token, Track, TrackKind, User, Visibility } from '@dnd/protocol';
 import { DEFAULT_SCENE_VISION, type Character, type Grid, type SceneVision } from '@dnd/rules';
 import type { Encounter } from './combat';
 import type { DB } from './db';
@@ -49,6 +49,22 @@ export interface SceneRecord extends SceneSummary {
 
 /** A token's light source and senses, kept beside the token row. */
 export type TokenVision = Pick<Token, 'light' | 'senses'>;
+
+/** A handout as stored: the unfiltered source for every client's HandoutView. */
+export interface HandoutRecord {
+  id: string;
+  campaignId: string;
+  title: string;
+  text: string;
+  fileId: string | null;
+  imageUrl: string | null;
+  audience: HandoutAudience;
+  /** Recipients when audience is 'players'. */
+  userIds: string[];
+  /** When it was last (re)shared or changed while shared; null while it's a draft. */
+  revisedAt: string | null;
+  createdAt: string;
+}
 
 type Row = Record<string, unknown>;
 
@@ -275,6 +291,167 @@ export class Store {
         bytes: Number(row.bytes),
       }
     );
+  }
+
+  // ---------- handouts ----------
+
+  /** Every handout in the campaign, newest first. */
+  handouts(campaignId: string): HandoutRecord[] {
+    const rows = this.db.prepare(`${HANDOUT_SELECT} WHERE h.campaign_id = ? ORDER BY h.rowid DESC`).all(campaignId) as Row[];
+    const recipients = new Map<string, string[]>();
+    const recipientRows = this.db
+      .prepare(
+        `SELECT r.handout_id, r.user_id FROM handout_recipients r JOIN handouts h ON h.id = r.handout_id
+         WHERE h.campaign_id = ? ORDER BY r.rowid`,
+      )
+      .all(campaignId) as Row[];
+    for (const r of recipientRows) {
+      const list = recipients.get(r.handout_id as string) ?? [];
+      list.push(r.user_id as string);
+      recipients.set(r.handout_id as string, list);
+    }
+    return rows.map((r) => Store.toHandout(r, recipients.get(r.id as string) ?? []));
+  }
+
+  getHandout(id: string): HandoutRecord | undefined {
+    const row = this.db.prepare(`${HANDOUT_SELECT} WHERE h.id = ?`).get(id) as Row | undefined;
+    if (!row) return undefined;
+    const users = this.db.prepare('SELECT user_id FROM handout_recipients WHERE handout_id = ? ORDER BY rowid').all(id) as Row[];
+    return Store.toHandout(
+      row,
+      users.map((u) => u.user_id as string),
+    );
+  }
+
+  private static toHandout(row: Row, userIds: string[]): HandoutRecord {
+    return {
+      id: row.id as string,
+      campaignId: row.campaign_id as string,
+      title: row.title as string,
+      text: row.text as string,
+      fileId: (row.file_id as string | null) ?? null,
+      imageUrl: row.filename ? `/files/${row.filename as string}` : null,
+      audience: row.audience as HandoutAudience,
+      userIds,
+      revisedAt: (row.revised_at as string | null) ?? null,
+      createdAt: row.created_at as string,
+    };
+  }
+
+  createHandout(h: Pick<HandoutRecord, 'campaignId' | 'title' | 'text' | 'fileId' | 'audience' | 'userIds'> & { shared: boolean }): string {
+    const id = randomUUID();
+    this.db.exec('BEGIN');
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO handouts (id, campaign_id, title, text, file_id, audience, revised_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(id, h.campaignId, h.title, h.text, h.fileId, h.audience, h.shared ? stamp() : null);
+      this.setRecipients(id, h.userIds);
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+    return id;
+  }
+
+  /** `revise`: true stamps it as newly shared/changed, false makes it a draft, undefined leaves it. */
+  updateHandout(
+    id: string,
+    patch: Partial<Pick<HandoutRecord, 'title' | 'text' | 'fileId' | 'audience' | 'userIds'>> & { revise?: boolean },
+  ): void {
+    const sets: string[] = [];
+    const values: (string | null)[] = [];
+    if (patch.title !== undefined) sets.push('title = ?'), values.push(patch.title);
+    if (patch.text !== undefined) sets.push('text = ?'), values.push(patch.text);
+    if (patch.fileId !== undefined) sets.push('file_id = ?'), values.push(patch.fileId);
+    if (patch.audience !== undefined) sets.push('audience = ?'), values.push(patch.audience);
+    if (patch.revise !== undefined) sets.push('revised_at = ?'), values.push(patch.revise ? stamp() : null);
+    this.db.exec('BEGIN');
+    try {
+      if (sets.length) this.db.prepare(`UPDATE handouts SET ${sets.join(', ')} WHERE id = ?`).run(...values, id);
+      if (patch.userIds !== undefined) this.setRecipients(id, patch.userIds);
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  private setRecipients(handoutId: string, userIds: string[]): void {
+    this.db.prepare('DELETE FROM handout_recipients WHERE handout_id = ?').run(handoutId);
+    const insert = this.db.prepare('INSERT OR IGNORE INTO handout_recipients (handout_id, user_id) VALUES (?, ?)');
+    for (const userId of userIds) insert.run(handoutId, userId);
+  }
+
+  deleteHandout(id: string): void {
+    this.db.prepare('DELETE FROM handouts WHERE id = ?').run(id);
+  }
+
+  /** When this user last opened each handout of the campaign. */
+  handoutReads(campaignId: string, userId: string): Map<string, string> {
+    const rows = this.db
+      .prepare(
+        `SELECT r.handout_id, r.read_at FROM handout_reads r JOIN handouts h ON h.id = r.handout_id
+         WHERE h.campaign_id = ? AND r.user_id = ?`,
+      )
+      .all(campaignId, userId) as Row[];
+    return new Map(rows.map((r) => [r.handout_id as string, r.read_at as string]));
+  }
+
+  markHandoutRead(handoutId: string, userId: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO handout_reads (handout_id, user_id, read_at) VALUES (?, ?, ?)
+         ON CONFLICT (handout_id, user_id) DO UPDATE SET read_at = excluded.read_at`,
+      )
+      .run(handoutId, userId, stamp());
+  }
+
+  // ---------- soundboard ----------
+
+  private static toTrack(row: Row): Track & { campaignId: string } {
+    return {
+      id: row.id as string,
+      campaignId: row.campaign_id as string,
+      name: row.name as string,
+      fileId: row.file_id as string,
+      url: `/files/${row.filename as string}`,
+      kind: row.kind as TrackKind,
+      loop: Boolean(row.loop),
+      volume: Number(row.volume),
+      duration: row.duration === null ? null : Number(row.duration),
+    };
+  }
+
+  tracks(campaignId: string): (Track & { campaignId: string })[] {
+    const rows = this.db.prepare(`${TRACK_SELECT} WHERE t.campaign_id = ? ORDER BY t.rowid`).all(campaignId) as Row[];
+    return rows.map(Store.toTrack);
+  }
+
+  getTrack(id: string): (Track & { campaignId: string }) | undefined {
+    const row = this.db.prepare(`${TRACK_SELECT} WHERE t.id = ?`).get(id) as Row | undefined;
+    return row && Store.toTrack(row);
+  }
+
+  createTrack(t: Omit<Track, 'id' | 'url'> & { campaignId: string }): string {
+    const id = randomUUID();
+    this.db
+      .prepare('INSERT INTO tracks (id, campaign_id, name, file_id, kind, loop, volume, duration) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, t.campaignId, t.name, t.fileId, t.kind, t.loop ? 1 : 0, t.volume, t.duration);
+    return id;
+  }
+
+  updateTrack(t: Pick<Track, 'id' | 'name' | 'kind' | 'loop' | 'volume'>): void {
+    this.db
+      .prepare('UPDATE tracks SET name = ?, kind = ?, loop = ?, volume = ? WHERE id = ?')
+      .run(t.name, t.kind, t.loop ? 1 : 0, t.volume, t.id);
+  }
+
+  deleteTrack(id: string): void {
+    this.db.prepare('DELETE FROM tracks WHERE id = ?').run(id);
   }
 
   // ---------- scenes ----------
@@ -614,6 +791,21 @@ export class Store {
     return rows.reverse().map(toLogEntry);
   }
 }
+
+let lastStamp = 0;
+/** ISO timestamps that never repeat within the process, so "shared after read" comparisons and ordering are exact. */
+function stamp(): string {
+  lastStamp = Math.max(Date.now(), lastStamp + 1);
+  return new Date(lastStamp).toISOString();
+}
+
+const HANDOUT_SELECT = `
+  SELECT h.id, h.campaign_id, h.title, h.text, h.file_id, h.audience, h.revised_at, h.created_at, f.filename
+  FROM handouts h LEFT JOIN files f ON f.id = h.file_id`;
+
+const TRACK_SELECT = `
+  SELECT t.id, t.campaign_id, t.name, t.file_id, t.kind, t.loop, t.volume, t.duration, f.filename
+  FROM tracks t JOIN files f ON f.id = t.file_id`;
 
 const SCENE_SELECT = `
   SELECT s.id, s.campaign_id, s.name, s.width, s.height, s.grid, s.fog_enabled, s.fog, s.map, f.filename

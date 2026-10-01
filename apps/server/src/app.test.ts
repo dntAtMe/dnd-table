@@ -293,6 +293,29 @@ const PNG = Buffer.from(
   'base64',
 );
 
+const ascii = (s: string) => new TextEncoder().encode(s);
+
+/** Tiny audio files: just enough header bytes for each format's signature. */
+const AUDIO = {
+  mp3: new Uint8Array([...ascii('ID3'), 4, 0, 0, 0, 0, 0, 0]),
+  mp3Frame: new Uint8Array([0xff, 0xfb, 0x90, 0x64, 0, 0, 0, 0]),
+  aac: new Uint8Array([0xff, 0xf1, 0x50, 0x80, 0, 0x1f, 0xfc]),
+  ogg: new Uint8Array([...ascii('OggS'), 0, 2, 0, 0, 0, 0, 0, 0, 0, 0]),
+  wav: new Uint8Array([...ascii('RIFF'), 36, 0, 0, 0, ...ascii('WAVEfmt '), 16, 0, 0, 0]),
+  m4a: new Uint8Array([0, 0, 0, 0x18, ...ascii('ftypM4A '), 0, 0, 0, 0, ...ascii('isom')]),
+  flac: new Uint8Array([...ascii('fLaC'), 0, 0, 0, 0x22]),
+};
+
+const AUDIO_FIXTURES: [string, Uint8Array, string, string][] = [
+  ['mp3 (ID3)', AUDIO.mp3, 'mp3', 'audio/mpeg'],
+  ['mp3 (frame)', AUDIO.mp3Frame, 'mp3', 'audio/mpeg'],
+  ['aac', AUDIO.aac, 'aac', 'audio/aac'],
+  ['ogg', AUDIO.ogg, 'ogg', 'audio/ogg'],
+  ['wav', AUDIO.wav, 'wav', 'audio/wav'],
+  ['m4a', AUDIO.m4a, 'm4a', 'audio/mp4'],
+  ['flac', AUDIO.flac, 'flac', 'audio/flac'],
+];
+
 describe('uploads', () => {
   it('stores images from the GM and serves them as static files', async () => {
     const { gm, player, campaignId } = await campaignWithPlayer();
@@ -309,6 +332,41 @@ describe('uploads', () => {
     const notImage = await gm.call('POST', `/api/campaigns/${campaignId}/files`, new TextEncoder().encode('<svg/>'));
     expect(notImage.status).toBe(415);
   });
+
+  it('sniffs audio by its magic bytes and enforces per-kind size limits', async () => {
+    const { gm, player, campaignId } = await campaignWithPlayer();
+    const upload = (body: Uint8Array, as = gm) => as.call('POST', `/api/campaigns/${campaignId}/files`, body);
+
+    for (const [name, bytes, ext, mime] of AUDIO_FIXTURES) {
+      const up = await upload(bytes);
+      expect(up.status, name).toBe(200);
+      expect(up.data, name).toMatchObject({ kind: 'audio', mime });
+      expect(up.data.url, name).toMatch(new RegExp(`^/files/[0-9a-f-]{36}\\.${ext}$`));
+    }
+    const served = await fetch(`http://${base}${(await upload(AUDIO.mp3)).data.url}`);
+    expect(served.headers.get('content-type')).toBe('audio/mpeg');
+    expect(Buffer.from(await served.arrayBuffer()).equals(Buffer.from(AUDIO.mp3))).toBe(true);
+    expect((await upload(new Uint8Array(PNG))).data).toMatchObject({ kind: 'image', mime: 'image/png' });
+
+    // Look-alikes and garbage are refused; so are players.
+    const riffAvi = new Uint8Array([...ascii('RIFF'), 4, 0, 0, 0, ...ascii('AVI '), 0, 0, 0, 0]);
+    for (const bad of [riffAvi, ascii('fLaX....'), new Uint8Array([0xff, 0x00, 0x00, 0x00]), ascii('MThd')]) {
+      expect((await upload(bad)).status).toBe(415);
+    }
+    expect((await upload(AUDIO.ogg, player)).status).toBe(403);
+
+    // Images keep their 30 MB limit; audio may be up to 50 MB.
+    const big = (header: Uint8Array, size: number) => {
+      const body = new Uint8Array(size);
+      body.set(header);
+      return body;
+    };
+    const tooBigImage = await upload(big(new Uint8Array(PNG), 30 * 1024 * 1024 + 1));
+    expect(tooBigImage.status).toBe(413);
+    expect(tooBigImage.data.error).toMatch(/too large/);
+    expect((await upload(big(AUDIO.mp3, 30 * 1024 * 1024 + 1))).status).toBe(200);
+    expect((await upload(big(AUDIO.mp3, 50 * 1024 * 1024 + 1))).status).toBe(413);
+  }, 20_000);
 });
 
 describe('scenes and tokens', () => {
@@ -415,6 +473,9 @@ describe('scenes and tokens', () => {
     const { data: other } = await gm.call('POST', '/api/campaigns', { name: 'Other' });
     const { data: file } = await gm.call('POST', `/api/campaigns/${other.id}/files`, new Uint8Array(PNG));
     gmSock.send({ type: 'scene:create', name: 'Stolen', fileId: file.id, width: 100, height: 100 });
+    expect(await gmSock.until('error')).toMatchObject({ message: 'Map image not found' });
+    const { data: song } = await gm.call('POST', `/api/campaigns/${campaignId}/files`, AUDIO.ogg);
+    gmSock.send({ type: 'scene:create', name: 'Song', fileId: song.id, width: 100, height: 100 });
     expect(await gmSock.until('error')).toMatchObject({ message: 'Map image not found' });
 
     const { data: mine } = await gm.call('POST', `/api/campaigns/${campaignId}/files`, new Uint8Array(PNG));
@@ -1344,5 +1405,270 @@ describe('area templates', () => {
     gmSock.send({ type: 'combat:turn', dir: 'next' });
     const after = await otherSock.until('scene', (m) => !labels(m.scene).includes('Fireball 2') && labels(m.scene).includes('Cloudkill'));
     expect(labels(after.scene)).toEqual(['Cloudkill']);
+  });
+});
+
+describe('handouts', () => {
+  /** GM, Ana and Bram (players), and a paired table screen. */
+  async function handoutTable() {
+    const { gm, player, campaignId } = await campaignWithPlayer();
+    const gmSock = await gm.socket(`campaign=${campaignId}`);
+    const hello = await gmSock.until('hello');
+    expect(hello.handouts).toEqual([]);
+    const bram = await Client.register('bram', 'Bram');
+    await player.call('POST', '/api/campaigns/join', { inviteCode: hello.campaign.inviteCode });
+    await bram.call('POST', '/api/campaigns/join', { inviteCode: hello.campaign.inviteCode });
+    const anaId = (await player.call('GET', '/api/auth/me')).data.user.id as string;
+    const bramId = (await bram.call('GET', '/api/auth/me')).data.user.id as string;
+    const anaSock = await player.socket(`campaign=${campaignId}`);
+    const bramSock = await bram.socket(`campaign=${campaignId}`);
+    await anaSock.until('hello');
+    await bramSock.until('hello');
+
+    const { data: display } = await new Client().call('POST', '/api/displays');
+    const tv = await Sock.open(`ws://${base}/ws?display=${display.token}`, '');
+    await tv.until('display:unpaired');
+    await gm.call('POST', `/api/campaigns/${campaignId}/displays`, { code: display.code });
+    const tvHello = await tv.until('hello');
+    expect(tvHello.handouts).toEqual([]);
+    expect(tvHello.showcase).toBeNull();
+    return { gm, player, bram, campaignId, gmSock, anaSock, bramSock, tv, anaId, bramId, displayToken: display.token as string };
+  }
+
+  const titles = (m: { handouts: { title: string }[] }) => m.handouts.map((h) => h.title);
+
+  it('shares handouts with everyone or chosen players, and never leaks the rest', async () => {
+    const { gm, player, bram, campaignId, gmSock, anaSock, bramSock, tv, anaId } = await handoutTable();
+    const { data: image } = await gm.call('POST', `/api/campaigns/${campaignId}/files`, new Uint8Array(PNG));
+
+    // A draft stays with the GM.
+    gmSock.send({ type: 'handout:create', title: 'Secret letter', text: 'Dear Iarno,\n\nThe spiders…', fileId: null, audience: 'gm' });
+    const drafted = await gmSock.until('handouts', (m) => m.handouts.length === 1);
+    const letter = drafted.handouts[0]!;
+    expect(letter).toMatchObject({ title: 'Secret letter', audience: 'gm', sharedAt: null, imageUrl: null, userIds: [] });
+    expect((await anaSock.until('handouts')).handouts).toEqual([]);
+    expect((await bramSock.until('handouts')).handouts).toEqual([]);
+
+    // Shared with Ana only: Bram never receives it, live or on reconnect.
+    gmSock.send({ type: 'handout:create', title: 'Map of Phandalin', text: '', fileId: image.id, audience: 'players', userIds: [anaId] });
+    const shared = await gmSock.until('handouts', (m) => m.handouts.length === 2);
+    const map = shared.handouts.find((h) => h.title === 'Map of Phandalin')!;
+    expect(map).toMatchObject({ imageUrl: image.url, audience: 'players', userIds: [anaId] });
+    expect(map.sharedAt).not.toBeNull();
+    const anaView = await anaSock.until('handouts', (m) => m.handouts.length === 1);
+    expect(anaView.handouts).toEqual([{ id: map.id, title: 'Map of Phandalin', text: '', imageUrl: image.url, sharedAt: map.sharedAt, unread: true }]);
+    expect((await bramSock.until('handouts')).handouts).toEqual([]);
+    bramSock.close();
+    const bramAgain = await bram.socket(`campaign=${campaignId}`);
+    expect((await bramAgain.until('hello')).handouts).toEqual([]);
+
+    // Players can't author handouts or open ones that aren't theirs.
+    anaSock.send({ type: 'handout:create', title: 'Forged', text: '', fileId: null, audience: 'all' });
+    expect(await anaSock.until('error')).toMatchObject({ message: 'Only the GM can do that' });
+    anaSock.send({ type: 'handout:read', handoutId: letter.id });
+    expect(await anaSock.until('error')).toMatchObject({ message: 'Handout not found' });
+    bramAgain.send({ type: 'handout:read', handoutId: map.id });
+    expect(await bramAgain.until('error')).toMatchObject({ message: 'Handout not found' });
+
+    // Reading clears the unread marker; a change while shared sets it again.
+    anaSock.send({ type: 'handout:read', handoutId: map.id });
+    expect((await anaSock.until('handouts')).handouts[0]).toMatchObject({ id: map.id, unread: false });
+    gmSock.send({ type: 'handout:update', handoutId: map.id, text: 'X marks the hideout.' });
+    expect((await anaSock.until('handouts')).handouts[0]).toMatchObject({ text: 'X marks the hideout.', unread: true });
+
+    // Shared with everyone, newest first for players.
+    gmSock.send({ type: 'handout:update', handoutId: letter.id, audience: 'all' });
+    expect(titles(await bramAgain.until('handouts', (m) => m.handouts.length === 1))).toEqual(['Secret letter']);
+    expect(titles(await anaSock.until('handouts', (m) => m.handouts.length === 2))).toEqual(['Secret letter', 'Map of Phandalin']);
+    const anaHello = await (await player.socket(`campaign=${campaignId}`)).until('hello');
+    expect(titles(anaHello)).toEqual(['Secret letter', 'Map of Phandalin']);
+
+    // Un-sharing makes it a draft again; deleting removes it.
+    gmSock.send({ type: 'handout:update', handoutId: letter.id, audience: 'gm' });
+    expect((await bramAgain.until('handouts')).handouts).toEqual([]);
+    const unshared = await gmSock.until('handouts', (m) => m.handouts.some((h) => h.id === letter.id && h.audience === 'gm'));
+    expect(unshared.handouts.find((h) => h.id === letter.id)!.sharedAt).toBeNull();
+    gmSock.send({ type: 'handout:delete', handoutId: map.id });
+    expect((await anaSock.until('handouts', (m) => m.handouts.length === 0)).handouts).toEqual([]);
+    expect(titles(await gmSock.until('handouts', (m) => m.handouts.length === 1))).toEqual(['Secret letter']);
+
+    // Recipients must be players here, and images must belong to the campaign.
+    const { data: gmMe } = await gm.call('GET', '/api/auth/me');
+    gmSock.send({ type: 'handout:update', handoutId: letter.id, audience: 'players', userIds: [gmMe.user.id] });
+    expect(await gmSock.until('error')).toMatchObject({ message: 'That player is not in this campaign' });
+    const { data: other } = await gm.call('POST', '/api/campaigns', { name: 'Other' });
+    const { data: foreign } = await gm.call('POST', `/api/campaigns/${other.id}/files`, new Uint8Array(PNG));
+    gmSock.send({ type: 'handout:update', handoutId: letter.id, fileId: foreign.id });
+    expect(await gmSock.until('error')).toMatchObject({ message: 'Image not found' });
+    const { data: song } = await gm.call('POST', `/api/campaigns/${campaignId}/files`, AUDIO.ogg);
+    gmSock.send({ type: 'handout:create', title: 'Song', text: '', fileId: song.id, audience: 'all' });
+    expect(await gmSock.until('error')).toMatchObject({ message: 'Image not found' });
+
+    // Table screens never receive handout lists.
+    tv.send({ type: 'handout:read', handoutId: letter.id });
+    gmSock.send({ type: 'chat', text: 'done', visibility: 'public' });
+    const seen: string[] = [];
+    for (;;) {
+      const msg = await tv.next();
+      seen.push(msg.type);
+      if (msg.type === 'log') break;
+    }
+    expect(seen).not.toContain('handouts');
+  });
+
+  it('shows handouts and images over the map on table screens, and on players only when asked', async () => {
+    const { gm, player, campaignId, gmSock, anaSock, tv, displayToken } = await handoutTable();
+    gmSock.send({ type: 'handout:create', title: 'Wanted poster', text: 'Reward: 50 gp', fileId: null, audience: 'gm' });
+    const posterId = (await gmSock.until('handouts', (m) => m.handouts.length === 1)).handouts[0]!.id;
+
+    // A draft shown on the table reaches the table and the GM, not players.
+    gmSock.send({ type: 'showcase:show', handoutId: posterId, toPlayers: false });
+    const onTv = await tv.until('showcase');
+    expect(onTv.showcase).toMatchObject({ handoutId: posterId, title: 'Wanted poster', text: 'Reward: 50 gp', imageUrl: null, toPlayers: false });
+    expect((await gmSock.until('showcase')).showcase).toEqual(onTv.showcase);
+    expect((await anaSock.until('showcase')).showcase).toBeNull();
+
+    // Editing what's shown updates it in place; players still don't get it.
+    gmSock.send({ type: 'handout:update', handoutId: posterId, text: 'Reward: 100 gp' });
+    const edited = await tv.until('showcase');
+    expect(edited.showcase).toMatchObject({ id: onTv.showcase!.id, text: 'Reward: 100 gp' });
+    expect((await anaSock.until('showcase')).showcase).toBeNull();
+
+    // Any uploaded image, also on players' screens.
+    const { data: image } = await gm.call('POST', `/api/campaigns/${campaignId}/files`, new Uint8Array(PNG));
+    gmSock.send({ type: 'showcase:show', fileId: image.id, title: 'The dragon', toPlayers: true });
+    const forAna = await anaSock.until('showcase', (m) => m.showcase !== null);
+    expect(forAna.showcase).toMatchObject({ handoutId: null, title: 'The dragon', imageUrl: image.url, toPlayers: true });
+    expect((await tv.until('showcase')).showcase).toEqual(forAna.showcase);
+
+    // Late joiners see what's on the table.
+    const tv2 = await Sock.open(`ws://${base}/ws?display=${displayToken}`, '');
+    expect((await tv2.until('hello')).showcase).toEqual(forAna.showcase);
+    const ana2 = await player.socket(`campaign=${campaignId}`);
+    expect((await ana2.until('hello')).showcase).toEqual(forAna.showcase);
+
+    // Only the GM controls the table.
+    anaSock.send({ type: 'showcase:clear' });
+    expect(await anaSock.until('error')).toMatchObject({ message: 'Only the GM can do that' });
+    gmSock.send({ type: 'showcase:show', toPlayers: false });
+    expect(await gmSock.until('error')).toMatchObject({ message: 'Nothing to show' });
+
+    // Back to the map.
+    gmSock.send({ type: 'showcase:clear' });
+    expect((await tv2.until('showcase')).showcase).toBeNull();
+    expect((await ana2.until('showcase')).showcase).toBeNull();
+
+    // Deleting a handout that's on show takes it down.
+    gmSock.send({ type: 'showcase:show', handoutId: posterId, toPlayers: true });
+    await tv2.until('showcase', (m) => m.showcase?.handoutId === posterId);
+    gmSock.send({ type: 'handout:delete', handoutId: posterId });
+    expect((await tv2.until('showcase')).showcase).toBeNull();
+    tv.close();
+    tv2.close();
+  });
+});
+
+describe('soundboard', () => {
+  it('lets the GM manage tracks and keeps every screen on the same playback state', async () => {
+    const { gm, player, campaignId } = await campaignWithPlayer();
+    const gmSock = await gm.socket(`campaign=${campaignId}`);
+    const hello = await gmSock.until('hello');
+    expect(hello.tracks).toEqual([]);
+    expect(hello.audio).toMatchObject({ layers: [], volume: 1 });
+    await player.call('POST', '/api/campaigns/join', { inviteCode: hello.campaign.inviteCode });
+    const anaSock = await player.socket(`campaign=${campaignId}`);
+    const anaHello = await anaSock.until('hello');
+    expect(anaHello.tracks).toBeUndefined();
+    const { data: display } = await new Client().call('POST', '/api/displays');
+    const tv = await Sock.open(`ws://${base}/ws?display=${display.token}`, '');
+    await tv.until('display:unpaired');
+    await gm.call('POST', `/api/campaigns/${campaignId}/displays`, { code: display.code });
+    expect((await tv.until('hello')).tracks).toBeUndefined();
+
+    const upload = async (body: Uint8Array) => (await gm.call('POST', `/api/campaigns/${campaignId}/files`, body)).data as { id: string; url: string };
+    const [mp3, ogg, wav, png] = await Promise.all([upload(AUDIO.mp3), upload(AUDIO.ogg), upload(AUDIO.wav), upload(new Uint8Array(PNG))]);
+
+    // Only the GM manages tracks, and only with this campaign's audio files.
+    anaSock.send({ type: 'track:create', name: 'Mine', fileId: mp3.id, kind: 'music', loop: true, volume: 1 });
+    expect(await anaSock.until('error')).toMatchObject({ message: 'Only the GM can do that' });
+    gmSock.send({ type: 'track:create', name: 'Picture', fileId: png.id, kind: 'music', loop: true, volume: 1 });
+    expect(await gmSock.until('error')).toMatchObject({ message: 'Audio file not found' });
+
+    const add = async (name: string, file: { id: string }, kind: string, loop: boolean, volume: number, duration: number | null) => {
+      gmSock.send({ type: 'track:create', name, fileId: file.id, kind, loop, volume, duration });
+      const { tracks } = await gmSock.until('tracks', (m) => m.tracks.some((t) => t.name === name));
+      return tracks.find((t) => t.name === name)!;
+    };
+    const tavern = await add('Tavern', mp3, 'music', true, 0.8, 120);
+    expect(tavern).toMatchObject({ fileId: mp3.id, url: mp3.url, kind: 'music', loop: true, volume: 0.8, duration: 120 });
+    const rain = await add('Rain', ogg, 'ambience', true, 0.6, null);
+    const battle = await add('Battle', wav, 'music', true, 1, 90);
+    const door = await add('Door', wav, 'effect', false, 0.9, 1.5);
+
+    const layerNames = (m: { audio: { layers: { name: string }[] } }) => m.audio.layers.map((l) => l.name);
+
+    // Music plus an ambience layer; starting other music replaces the old one.
+    gmSock.send({ type: 'audio:play', trackId: tavern.id });
+    const started = await tv.until('audio');
+    expect(started.audio.layers).toEqual([
+      expect.objectContaining({ trackId: tavern.id, url: mp3.url, kind: 'music', loop: true, volume: 0.8, playing: true, position: 0 }),
+    ]);
+    expect(started.audio.serverTime - started.audio.layers[0]!.startedAt).toBeGreaterThanOrEqual(0);
+    expect(await anaSock.until('audio')).toEqual(started);
+    gmSock.send({ type: 'audio:play', trackId: rain.id });
+    expect(layerNames(await tv.until('audio'))).toEqual(['Tavern', 'Rain']);
+    gmSock.send({ type: 'audio:play', trackId: battle.id });
+    expect(layerNames(await tv.until('audio'))).toEqual(['Rain', 'Battle']);
+
+    // Volumes: per layer and master.
+    gmSock.send({ type: 'audio:volume', trackId: rain.id, volume: 0.3 });
+    expect((await tv.until('audio')).audio.layers[0]).toMatchObject({ trackId: rain.id, volume: 0.3 });
+    gmSock.send({ type: 'audio:volume', trackId: null, volume: 0.5 });
+    expect((await tv.until('audio')).audio.volume).toBe(0.5);
+    gmSock.send({ type: 'audio:volume', trackId: tavern.id, volume: 0.5 });
+    expect(await gmSock.until('error')).toMatchObject({ message: "That track isn't playing" });
+
+    // One-shot effects play once for whoever is connected and don't join the shared state.
+    gmSock.send({ type: 'audio:play', trackId: door.id });
+    expect(await tv.until('audio:effect')).toMatchObject({ trackId: door.id, url: wav.url, volume: 0.9 });
+    expect(await anaSock.until('audio:effect')).toMatchObject({ trackId: door.id });
+
+    // Pause keeps the position; late joiners get the state with a server timestamp to seek by.
+    await new Promise((r) => setTimeout(r, 40));
+    gmSock.send({ type: 'audio:pause', trackId: battle.id });
+    const paused = (await tv.until('audio')).audio.layers.find((l) => l.trackId === battle.id)!;
+    expect(paused.playing).toBe(false);
+    expect(paused.position).toBeGreaterThanOrEqual(0.03);
+    const late = await (await player.socket(`campaign=${campaignId}`)).until('hello');
+    expect(late.audio.volume).toBe(0.5);
+    const lateRain = late.audio.layers.find((l) => l.trackId === rain.id)!;
+    expect(lateRain).toMatchObject({ playing: true, volume: 0.3 });
+    expect(late.audio.serverTime - lateRain.startedAt).toBeGreaterThanOrEqual(40);
+    expect(late.audio.layers.find((l) => l.trackId === battle.id)).toMatchObject({ playing: false, position: paused.position });
+
+    // Resuming continues from where it paused.
+    gmSock.send({ type: 'audio:play', trackId: battle.id });
+    const resumed = (await tv.until('audio')).audio;
+    const battleLayer = resumed.layers.find((l) => l.trackId === battle.id)!;
+    expect(battleLayer.playing).toBe(true);
+    expect(resumed.serverTime - battleLayer.startedAt).toBeGreaterThanOrEqual(paused.position * 1000 - 1);
+
+    // Players can't touch playback.
+    anaSock.send({ type: 'audio:stop-all' });
+    expect(await anaSock.until('error')).toMatchObject({ message: 'Only the GM can do that' });
+
+    // Track edits apply to what's playing; deleting a track stops it.
+    gmSock.send({ type: 'track:update', trackId: rain.id, name: 'Storm', loop: false });
+    expect((await tv.until('audio')).audio.layers[0]).toMatchObject({ name: 'Storm', loop: false });
+    gmSock.send({ type: 'track:delete', trackId: rain.id });
+    expect(layerNames(await tv.until('audio'))).toEqual(['Battle']);
+    expect((await gmSock.until('tracks', (m) => m.tracks.length === 3)).tracks.map((t) => t.name)).toEqual(['Tavern', 'Battle', 'Door']);
+    gmSock.send({ type: 'audio:stop', trackId: battle.id });
+    expect((await tv.until('audio')).audio.layers).toEqual([]);
+    gmSock.send({ type: 'audio:play', trackId: tavern.id });
+    await tv.until('audio', (m) => m.audio.layers.length === 1);
+    gmSock.send({ type: 'audio:stop-all' });
+    expect((await tv.until('audio')).audio.layers).toEqual([]);
+    tv.close();
   });
 });
