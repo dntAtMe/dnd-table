@@ -3388,3 +3388,8 @@ textarea:focus {
   cursor: default;
   pointer-events: none;
 }
+
+/* Chat keeps the log's own whitespace handling. */
+.entry__text .rich-text {
+  white-space: inherit;
+}

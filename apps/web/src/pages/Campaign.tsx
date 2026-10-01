@@ -29,6 +29,7 @@ import { ShowcaseOverlay, useHandoutNotice, usePlayerShowcase } from '../compone
 import { CompendiumView } from '../components/knowledge/CompendiumView';
 import { useEntryHistory } from '../components/knowledge/history';
 import { PopupLayer } from '../components/knowledge/PopupLayer';
+import { RichText } from '../components/knowledge/RichText';
 import { QuickSearch, useQuickSearchShortcut } from '../components/knowledge/QuickSearch';
 import { useGameSocket, type SocketStatus } from '../lib/useGameSocket';
 
@@ -624,7 +625,11 @@ function LastRoll({ state, userId }: { state: ReturnType<typeof useGameSocket>['
     <div className="last-roll" key={last.id}>
       <div className="last-roll__head">
         <span>Your last roll</span>
-        {last.label && <span className="entry__label">{last.label}</span>}
+        {last.label && (
+          <span className="entry__label">
+            <RichText text={last.label} inline />
+          </span>
+        )}
         <span className="entry__expr">{last.roll.expression}</span>
       </div>
       <RollView roll={last.roll} />

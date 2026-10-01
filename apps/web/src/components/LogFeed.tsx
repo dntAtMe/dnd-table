@@ -1,5 +1,6 @@
 import type { ClientMessage, LogEntry, Visibility } from '@dnd/protocol';
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
+import { RichText } from './knowledge/RichText';
 import { RollView } from './RollView';
 
 const timeFormat = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
@@ -9,7 +10,11 @@ function Entry({ entry, mine }: { entry: LogEntry; mine: boolean }) {
     <li className={`entry entry--${entry.kind}${entry.visibility === 'gm' ? ' entry--hidden' : ''}${mine ? ' entry--mine' : ''}`}>
       <div className="entry__meta">
         <span className={`entry__author${entry.author.role === 'gm' ? ' entry__author--gm' : ''}`}>{entry.author.name}</span>
-        {entry.kind === 'roll' && entry.label && <span className="entry__label">{entry.label}</span>}
+        {entry.kind === 'roll' && entry.label && (
+          <span className="entry__label">
+            <RichText text={entry.label} inline />
+          </span>
+        )}
         {entry.visibility === 'gm' && (
           <span className="badge badge--hidden" title="Only the author and the GM can see this">
             {entry.author.role === 'gm' ? 'Hidden' : 'To GM'}
@@ -25,7 +30,9 @@ function Entry({ entry, mine }: { entry: LogEntry; mine: boolean }) {
           <RollView roll={entry.roll} />
         </>
       ) : (
-        <p className="entry__text">{entry.text}</p>
+        <p className="entry__text">
+          <RichText text={entry.text} inline />
+        </p>
       )}
     </li>
   );
