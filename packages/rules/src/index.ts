@@ -4,4 +4,5 @@ export * from './dice';
 export * from './grid';
 export * from './levelup';
 export * from './mapdata';
+export * from './movement';
 export * from './srd';
