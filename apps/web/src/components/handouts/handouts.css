@@ -332,7 +332,7 @@
   border: 1px solid var(--accent);
   border-radius: var(--radius-sm);
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
-  animation: rise 0.2s ease-out;
+  animation: fade-in 0.2s ease-out;
 }
 
 .handout-notice__text {

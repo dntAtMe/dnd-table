@@ -198,3 +198,161 @@ input[type='range'].volume {
   margin-left: auto;
   color: var(--danger);
 }
+
+/* ---------- listening on this device ---------- */
+.speaker-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.note-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.audio-control {
+  position: relative;
+}
+
+.audio-control__button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.audio-control__button:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.audio-control__button.is-on {
+  color: var(--accent);
+}
+
+.audio-control__dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.audio-control__panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 25;
+  width: min(280px, calc(100vw - 24px));
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.4);
+}
+
+.audio-control__volume {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.now-playing {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 40vw;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 16px;
+}
+
+button.now-playing {
+  cursor: pointer;
+}
+
+.now-playing .note-icon {
+  color: var(--accent);
+}
+
+.now-playing__names {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.now-playing--muted {
+  opacity: 0.6;
+}
+
+.now-playing--muted .speaker-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.audio-unlock {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 22;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 16px 8px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
+  cursor: pointer;
+  animation: rise 0.2s ease-out;
+}
+
+.audio-unlock--table {
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  font-size: 18px;
+  animation-name: fade-in;
+}
+
+@media (max-width: 960px) {
+  .audio-unlock:not(.audio-unlock--table) {
+    bottom: calc(var(--tabbar-h) + 16px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 520px) {
+  .now-playing {
+    max-width: 55vw;
+    font-size: 14px;
+  }
+}
+
+/* Table screen header: the chip sits on the right, next to Fullscreen. */
+.table__header .now-playing {
+  margin-left: auto;
+}
+
+.table__header .now-playing + .table__fs {
+  margin-left: 0;
+}

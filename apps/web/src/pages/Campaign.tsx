@@ -18,9 +18,10 @@ import { InitiativeStrip } from '../components/combat/InitiativeStrip';
 import { CombatantCard } from '../components/combat/InitiativeTracker';
 import { tokenDecorations } from '../components/combat/TokenDecor';
 import { LevelUp } from '../components/character/LevelUp';
+import { AudioControl, AudioUnlockPrompt } from '../components/audio/AudioControls';
 import { SoundboardPanel } from '../components/audio/SoundboardPanel';
-import { HandoutsPanel } from '../components/handouts/HandoutsPanel';
-import { ShowcaseStatus } from '../components/handouts/HandoutsPanel';
+import { useAmbientAudio, useAudioPrefs } from '../components/audio/useAmbientAudio';
+import { HandoutsPanel, ShowcaseStatus } from '../components/handouts/HandoutsPanel';
 import { ShowcaseOverlay, useHandoutNotice, usePlayerShowcase } from '../components/handouts/Showcase';
 import { useGameSocket, type SocketStatus } from '../lib/useGameSocket';
 
@@ -126,6 +127,14 @@ export function Campaign({ user }: { user: User }) {
   const unreadHandouts = isGm ? 0 : state.handouts.filter((h) => h.unread).length;
   const [handoutNotice, dismissHandoutNotice] = useHandoutNotice(state.handouts, Boolean(hello) && !isGm);
   const [playerShowcase, closePlayerShowcase] = usePlayerShowcase(isGm ? null : state.showcase);
+  const [audioPrefs, setAudioPrefs] = useAudioPrefs(isGm ? 'gm' : 'player');
+  const ambient = useAmbientAudio({
+    audio: state.audio,
+    clockOffset: state.clockOffset,
+    effect: state.effect,
+    enabled: Boolean(hello) && audioPrefs.enabled,
+    volume: audioPrefs.volume,
+  });
   const selectedToken = scene?.tokens.find((t) => t.id === selectedTokenId) ?? null;
   const { combat } = state;
   const decorations = useMemo(
@@ -215,6 +224,13 @@ export function Campaign({ user }: { user: User }) {
         <h1 className="topbar__title">{hello.campaign.name}</h1>
         <span className={`badge ${isGm ? 'badge--gm' : ''}`}>{isGm ? 'GM' : 'Player'}</span>
         <div className="topbar__right">
+          <AudioControl
+            audio={state.audio}
+            prefs={audioPrefs}
+            setPrefs={setAudioPrefs}
+            unlock={ambient.unlock}
+            label={isGm ? 'Also play table audio on this device' : 'Play table audio on this device'}
+          />
           <span className={`status status--${state.status}`}>{STATUS_TEXT[state.status]}</span>
           <span className="muted topbar__user">{user.displayName}</span>
         </div>
@@ -424,6 +440,8 @@ export function Campaign({ user }: { user: User }) {
           </button>
         ))}
       </nav>
+
+      {ambient.blocked && <AudioUnlockPrompt onUnlock={ambient.unlock} />}
 
       {playerShowcase && <ShowcaseOverlay showcase={playerShowcase} onClose={closePlayerShowcase} />}
 
