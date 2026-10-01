@@ -1,13 +1,27 @@
-import type { CameraRect, SceneView, Token } from '@dnd/protocol';
-import { FogMask, MapData, brushCells, gridGeometry, measureMove, pointToCell } from '@dnd/rules';
+import type { CameraRect, MapMessage, SceneView, Token } from '@dnd/protocol';
+import {
+  FogMask,
+  MapData,
+  brushCells,
+  edgeCode,
+  gridGeometry,
+  measureMove,
+  pointToCell,
+  terrainCode,
+  type DoorState,
+  type Edge,
+  type EdgeFeature,
+  type TerrainId,
+} from '@dnd/rules';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useElementSize } from '../../lib/useElementSize';
 import type { Ping } from '../../lib/useGameSocket';
 import { fitRect, screenToMap, visibleRect, zoomAt, type Camera } from './camera';
 import { fogPath } from './fogPath';
 import { TerrainLayer, TerrainPatterns, WallLayer } from './MapFeatures';
+import { edgeKey, edgesBetween, nearestEdge, nearestVertex, parseEdgeKey, type Vertex } from './wallPath';
 
-export type MapTool = 'move' | 'reveal' | 'hide' | 'ruler' | 'ping';
+export type MapTool = 'move' | 'reveal' | 'hide' | 'ruler' | 'ping' | 'wall' | 'door' | 'terrain' | 'erase';
 
 export interface MapViewProps {
   scene: SceneView;
@@ -29,6 +43,12 @@ export interface MapViewProps {
   onPaintFog?: (cells: number[], reveal: boolean) => void;
   pings?: Ping[];
   onPing?: (x: number, y: number) => void;
+  /** Terrain painted by the terrain tool. */
+  terrain?: TerrainId;
+  /** New doors placed with the door tool are secret. */
+  secretDoors?: boolean;
+  /** Map editor messages (walls, doors, terrain) and door toggles; sceneId is filled in. */
+  onMapEdit?: (msg: MapMessage) => void;
   /** Overlay controls drawn above the map (toolbars). */
   children?: ReactNode;
 }
@@ -37,11 +57,16 @@ export interface MapViewProps {
 const DRAG_THRESHOLD = 4;
 /** How long to show a moved token at its new spot before trusting the server's copy again. */
 const PENDING_MOVE_MS = 1500;
-/** Fog strokes are sent in batches while painting so others see them appear. */
+/** Fog, terrain and wall strokes are sent in batches while painting so others see them appear. */
 const FOG_FLUSH_MS = 150;
+/** How close (in cells) the pointer must come to a grid corner for a wall stroke to reach it. */
+const VERTEX_SNAP = 0.35;
+const WALL = edgeCode({ kind: 'wall' });
+const NEXT_DOOR_STATE: Record<DoorState, DoorState> = { open: 'closed', closed: 'locked', locked: 'open' };
 
 type Gesture =
-  | { kind: 'pan'; pointerId: number; sx: number; sy: number; cam: Camera; moved: boolean }
+  /** `door` is set when the press started on a door: a click (no drag) opens or closes it. */
+  | { kind: 'pan'; pointerId: number; sx: number; sy: number; cam: Camera; moved: boolean; door?: Edge }
   | {
       kind: 'token';
       pointerId: number;
@@ -54,7 +79,18 @@ type Gesture =
       sy: number;
       moved: boolean;
     }
-  | { kind: 'paint'; pointerId: number; last: { col: number; row: number }; unsent: Set<number>; sentAt: number }
+  | { kind: 'paint'; layer: 'fog' | 'terrain'; pointerId: number; last: { col: number; row: number }; unsent: Set<number>; sentAt: number }
+  | {
+      kind: 'edges';
+      pointerId: number;
+      erase: boolean;
+      /** Where the press started, for a click that places a single edge. */
+      start: { x: number; y: number };
+      vertex: Vertex;
+      drew: boolean;
+      unsent: Map<string, Edge>;
+      sentAt: number;
+    }
   | { kind: 'ruler'; pointerId: number }
   | { kind: 'pinch'; dist: number; cx: number; cy: number; cam: Camera };
 
@@ -127,6 +163,9 @@ export function MapView({
   onPaintFog,
   pings = [],
   onPing,
+  terrain = 'floor',
+  secretDoors = false,
+  onMapEdit,
   children,
 }: MapViewProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -150,6 +189,13 @@ export function MapView({
   useEffect(() => {
     if (gesture.current?.kind !== 'paint') setStroke(null);
   }, [scene.fog]);
+  /** Map edits not yet echoed by the server: edge overrides by key, and the terrain stroke. */
+  const [edgeEdits, setEdgeEdits] = useState<Map<string, { edge: Edge; code: number }> | null>(null);
+  const [terrainStroke, setTerrainStroke] = useState<{ code: number; cells: Set<number> } | null>(null);
+  useEffect(() => {
+    if (gesture.current?.kind !== 'edges') setEdgeEdits(null);
+    if (gesture.current?.kind !== 'paint') setTerrainStroke(null);
+  }, [scene.map]);
   useEffect(() => {
     if (Object.keys(pending).length === 0) return;
     const t = setTimeout(() => setPending({}), PENDING_MOVE_MS);
@@ -169,7 +215,14 @@ export function MapView({
     return copy;
   }, [serverFog, stroke]);
   const fogD = useMemo(() => (fog ? fogPath(fog, geo, grid.size) : ''), [fog, geo, grid.size]);
-  const map = useMemo(() => MapData.decode(scene.map, geo.cols, geo.rows), [scene.map, geo.cols, geo.rows]);
+  const serverMap = useMemo(() => MapData.decode(scene.map, geo.cols, geo.rows), [scene.map, geo.cols, geo.rows]);
+  const map = useMemo(() => {
+    if (!edgeEdits && !terrainStroke) return serverMap;
+    const copy = serverMap.clone();
+    for (const { edge, code } of edgeEdits?.values() ?? []) copy.setEdge(edge, code);
+    for (const i of terrainStroke?.cells ?? []) copy.terrain[i] = terrainStroke!.code;
+    return copy;
+  }, [serverMap, edgeEdits, terrainStroke]);
 
   const fullMap: CameraRect = { x: 0, y: 0, w: scene.width, h: scene.height };
   const minZoom = size ? Math.min(size.width / scene.width, size.height / scene.height) * 0.5 : 0.05;
@@ -224,6 +277,7 @@ export function MapView({
   };
 
   const painting = isGm && (tool === 'reveal' || tool === 'hide') && Boolean(serverFog);
+  const editing = isGm && (tool === 'wall' || tool === 'door' || tool === 'terrain' || tool === 'erase');
 
   /** Paints the brush along the line from the last cell to this one, so fast strokes leave no gaps. */
   const paintTo = (g: Extract<Gesture, { kind: 'paint' }>, to: { col: number; row: number }, first = false) => {
@@ -239,6 +293,10 @@ export function MapView({
       }
     }
     g.last = to;
+    if (g.layer === 'terrain') {
+      setTerrainStroke((prev) => ({ code: terrainCode(terrain), cells: new Set([...(prev?.cells ?? []), ...added]) }));
+      return;
+    }
     setStroke((prev) => {
       const cells = new Set(prev?.cells);
       for (const idx of added) cells.add(idx);
@@ -248,9 +306,57 @@ export function MapView({
 
   const flushPaint = (g: Extract<Gesture, { kind: 'paint' }>) => {
     if (g.unsent.size === 0) return;
-    onPaintFog?.([...g.unsent], tool === 'reveal');
+    if (g.layer === 'terrain') onMapEdit?.({ type: 'map:terrain', sceneId: scene.id, cells: [...g.unsent], terrain });
+    else onPaintFog?.([...g.unsent], tool === 'reveal');
     g.unsent = new Set();
     g.sentAt = Date.now();
+  };
+
+  /** Adds edges to a wall/erase stroke and shows them straight away. */
+  const strokeEdges = (g: Extract<Gesture, { kind: 'edges' }>, edges: Edge[]) => {
+    const valid = edges.filter((e) => map.edgeIndex(e) >= 0);
+    if (valid.length === 0) return;
+    for (const e of valid) g.unsent.set(edgeKey(e), e);
+    setEdgeEdits((prev) => {
+      const next = new Map(prev);
+      for (const e of valid) next.set(edgeKey(e), { edge: e, code: g.erase ? 0 : WALL });
+      return next;
+    });
+  };
+
+  const flushEdges = (g: Extract<Gesture, { kind: 'edges' }>) => {
+    const edges = [...g.unsent.values()];
+    for (let i = 0; i < edges.length; i += 2000) {
+      onMapEdit?.({ type: 'map:walls', sceneId: scene.id, edges: edges.slice(i, i + 2000), wall: !g.erase });
+    }
+    g.unsent = new Map();
+    g.sentAt = Date.now();
+  };
+
+  const showEdge = (edge: Edge, feature: EdgeFeature) =>
+    setEdgeEdits((prev) => new Map(prev).set(edgeKey(edge), { edge, code: edgeCode(feature) }));
+
+  /** Door tool: place a door, or cycle an existing one's state (Shift/Alt toggles secret instead). */
+  const placeDoor = (edge: Edge, toggleSecret: boolean) => {
+    if (map.edgeIndex(edge) < 0) return;
+    const f = map.feature(edge);
+    const next: EdgeFeature =
+      f?.kind === 'door'
+        ? toggleSecret
+          ? { ...f, secret: !f.secret }
+          : { ...f, state: NEXT_DOOR_STATE[f.state] }
+        : { kind: 'door', state: 'closed', secret: secretDoors };
+    if (next.kind !== 'door') return;
+    showEdge(edge, next);
+    onMapEdit?.({ type: 'map:door', sceneId: scene.id, edge, state: next.state, secret: next.secret });
+  };
+
+  /** Move tool click on a door: open or close it. Only the GM's clicks are shown before the server agrees. */
+  const toggleDoor = (edge: Edge) => {
+    const f = map.feature(edge);
+    if (f?.kind !== 'door') return;
+    if (isGm) showEdge(edge, { ...f, state: f.state === 'open' ? 'closed' : 'open' });
+    onMapEdit?.({ type: 'door:toggle', sceneId: scene.id, edge });
   };
 
   const canMove = (t: Token) => isGm || (userId !== undefined && t.ownerUserId === userId);
@@ -268,18 +374,42 @@ export function MapView({
     if (pointers.current.size === 2) {
       const g = gesture.current;
       if (g?.kind === 'paint') flushPaint(g);
+      if (g?.kind === 'edges') flushEdges(g);
       setDrag(null);
       return startPinch();
     }
     if (pointers.current.size > 2) return;
 
-    if (painting && e.button === 0) {
+    if ((painting || (editing && tool === 'terrain')) && e.button === 0) {
       const m = screenToMap(camRef.current, p.x, p.y);
       const cell = pointToCell(geo, grid.size, m.x, m.y);
-      const g: Gesture = { kind: 'paint', pointerId: e.pointerId, last: cell, unsent: new Set(), sentAt: Date.now() };
+      const layer = tool === 'terrain' ? 'terrain' : 'fog';
+      const g: Gesture = { kind: 'paint', layer, pointerId: e.pointerId, last: cell, unsent: new Set(), sentAt: Date.now() };
       gesture.current = g;
-      setStroke(null);
+      if (layer === 'fog') setStroke(null);
+      else setTerrainStroke(null);
       paintTo(g, cell, true);
+      return;
+    }
+
+    if (editing && (tool === 'wall' || tool === 'erase' || tool === 'door') && e.button === 0) {
+      const m = screenToMap(camRef.current, p.x, p.y);
+      if (tool === 'door') {
+        placeDoor(nearestEdge(geo, grid.size, m.x, m.y), e.shiftKey || e.altKey);
+        gesture.current = null;
+        return;
+      }
+      const vertex = nearestVertex(geo, grid.size, m.x, m.y);
+      gesture.current = {
+        kind: 'edges',
+        pointerId: e.pointerId,
+        erase: tool === 'erase',
+        start: m,
+        vertex,
+        drew: false,
+        unsent: new Map(),
+        sentAt: Date.now(),
+      };
       return;
     }
 
@@ -296,6 +426,8 @@ export function MapView({
       return;
     }
 
+    const doorKey = tool === 'move' ? (e.target as Element).closest('[data-door]')?.getAttribute('data-door') : null;
+    const door = doorKey ? parseEdgeKey(doorKey) ?? undefined : undefined;
     const tokenId = (e.target as Element).closest('[data-token-id]')?.getAttribute('data-token-id');
     const token = tokenId ? scene.tokens.find((t) => t.id === tokenId) : undefined;
     if (token && e.button === 0) {
@@ -314,7 +446,7 @@ export function MapView({
       };
       return;
     }
-    gesture.current = { kind: 'pan', pointerId: e.pointerId, sx: p.x, sy: p.y, cam: camRef.current, moved: false };
+    gesture.current = { kind: 'pan', pointerId: e.pointerId, sx: p.x, sy: p.y, cam: camRef.current, moved: false, door };
   };
 
   const onPointerMove = (e: ReactPointerEvent<SVGSVGElement>) => {
@@ -335,6 +467,15 @@ export function MapView({
       const cell = pointToCell(geo, grid.size, m.x, m.y);
       if (cell.col !== g.last.col || cell.row !== g.last.row) paintTo(g, cell);
       if (Date.now() - g.sentAt > FOG_FLUSH_MS) flushPaint(g);
+    } else if (g.kind === 'edges' && g.pointerId === e.pointerId) {
+      const m = screenToMap(camRef.current!, p.x, p.y);
+      const v = nearestVertex(geo, grid.size, m.x, m.y);
+      if (v.dist <= VERTEX_SNAP && (v.x !== g.vertex.x || v.y !== g.vertex.y)) {
+        strokeEdges(g, edgesBetween(g.vertex, v));
+        g.vertex = v;
+        g.drew = true;
+      }
+      if (Date.now() - g.sentAt > FOG_FLUSH_MS) flushEdges(g);
     } else if (g.kind === 'token' && g.pointerId === e.pointerId) {
       if (!g.movable) return;
       if (!g.moved && Math.hypot(p.x - g.sx, p.y - g.sy) <= DRAG_THRESHOLD) return;
@@ -364,6 +505,10 @@ export function MapView({
     }
     if (g?.kind === 'paint' && g.pointerId === e.pointerId) {
       flushPaint(g);
+    } else if (g?.kind === 'edges' && g.pointerId === e.pointerId) {
+      // A click without reaching another corner places (or erases) the single nearest edge.
+      if (!g.drew) strokeEdges(g, [nearestEdge(geo, grid.size, g.start.x, g.start.y)]);
+      flushEdges(g);
     } else if (g?.kind === 'token' && g.pointerId === e.pointerId) {
       if (g.moved && drag) {
         const { col, row } = cellOf(drag.x, drag.y);
@@ -377,7 +522,8 @@ export function MapView({
       }
       setDrag(null);
     } else if (g?.kind === 'pan' && !g.moved && g.pointerId === e.pointerId) {
-      onSelectToken?.(null);
+      if (g.door) toggleDoor(g.door);
+      else onSelectToken?.(null);
     }
     if (pointers.current.size === 0) gesture.current = null;
   };
@@ -406,7 +552,7 @@ export function MapView({
     <div className={`map${interactive ? '' : ' map--display'}${scene.imageUrl ? '' : ' map--blank'}`} ref={wrapRef}>
       <svg
         ref={svgRef}
-        className={`map__svg${painting ? ' map__svg--paint' : ''}`}
+        className={`map__svg${painting || editing ? ' map__svg--paint' : ''}`}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}

@@ -22,11 +22,22 @@ const ICONS: Record<string, ReactNode> = {
       <circle cx="12" cy="12" r="8" />
     </>
   ),
+  wall: <path d="M3 5h18v14H3zM3 12h18M9 5v7M15 12v7" />,
+  door: (
+    <>
+      <path d="M5 21V3h14v18M3 21h18" />
+      <circle cx="15" cy="12" r="1" />
+    </>
+  ),
+  terrain: <path d="m3 19 6-10 4 6 3-4 5 8zM14 6.5a1.5 1.5 0 1 0 0-.01" />,
+  erase: <path d="m8 20-5-5L14 4l7 7-7 7M20 20H8M9 9l7 7" />,
 };
 
 export interface ToolOption {
   tool: MapTool;
   label: string;
+  /** Starts a new group of tools, with a separator before it. */
+  group?: boolean;
 }
 
 interface Props {
@@ -39,11 +50,12 @@ interface Props {
 }
 
 export function MapToolbar({ tools, tool, onTool, brush, onBrush, children }: Props) {
-  const fogTool = tool === 'reveal' || tool === 'hide';
+  const brushTool = tool === 'reveal' || tool === 'hide' || tool === 'terrain';
   return (
     <div className="map-toolbar" role="toolbar" aria-label="Map tools">
       <div className="map-toolbar__tools">
-        {tools.map((t) => (
+        {tools.flatMap((t) => [
+          t.group ? <span key={`${t.tool}-sep`} className="map-toolbar__sep" aria-hidden="true" /> : null,
           <button
             key={t.tool}
             type="button"
@@ -56,10 +68,10 @@ export function MapToolbar({ tools, tool, onTool, brush, onBrush, children }: Pr
               {ICONS[t.tool]}
             </svg>
             <span className="tool__label">{t.label}</span>
-          </button>
-        ))}
+          </button>,
+        ])}
       </div>
-      {fogTool && brush !== undefined && onBrush && (
+      {brushTool && brush !== undefined && onBrush && (
         <div className="segmented" role="radiogroup" aria-label="Brush size">
           {[1, 3, 5].map((b) => (
             <button key={b} type="button" role="radio" aria-checked={brush === b} className={brush === b ? 'is-active' : ''} onClick={() => onBrush(b)}>

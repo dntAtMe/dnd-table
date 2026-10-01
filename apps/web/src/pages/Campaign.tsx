@@ -1,11 +1,12 @@
 import type { CameraRect, User } from '@dnd/protocol';
-import { gridGeometry, pointToCell } from '@dnd/rules';
+import { gridGeometry, pointToCell, type TerrainId } from '@dnd/rules';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router';
 import { DiceTray } from '../components/DiceTray';
 import { LogFeed } from '../components/LogFeed';
 import { DisplaysPanel, InviteCode, PartyList } from '../components/Panels';
 import { RollView } from '../components/RollView';
+import { MapEditorPanel, SecretDoorToggle, TerrainPicker } from '../components/map/MapEditorPanel';
 import { MapToolbar, type ToolOption } from '../components/map/MapToolbar';
 import { MapView, type MapTool } from '../components/map/MapView';
 import { SceneSettings, ScenesPanel } from '../components/ScenePanels';
@@ -47,6 +48,12 @@ const PLAYER_TOOLS: ToolOption[] = [
   { tool: 'ping', label: 'Ping' },
 ];
 const GM_TOOLS: ToolOption[] = [...PLAYER_TOOLS, { tool: 'reveal', label: 'Reveal' }, { tool: 'hide', label: 'Hide' }];
+const EDIT_TOOLS: ToolOption[] = [
+  { tool: 'wall', label: 'Wall', group: true },
+  { tool: 'door', label: 'Door' },
+  { tool: 'terrain', label: 'Terrain' },
+  { tool: 'erase', label: 'Erase' },
+];
 
 const TAB_LABELS: Record<Tab, string> = { map: 'Map', sheet: 'Sheet', dice: 'Dice', log: 'Log', party: 'Party' };
 
@@ -70,6 +77,8 @@ export function Campaign({ user }: { user: User }) {
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
   const [tool, setTool] = useState<MapTool>('move');
   const [brush, setBrush] = useState(3);
+  const [terrain, setTerrain] = useState<TerrainId>('floor');
+  const [secretDoors, setSecretDoors] = useState(false);
   const [creating, setCreating] = useState(false);
   const [levelingId, setLevelingId] = useState<string | null>(null);
   const leveling = state.characters.find((c) => c.id === levelingId);
@@ -213,6 +222,11 @@ export function Campaign({ user }: { user: User }) {
               <SceneSettings key={state.scene.id} scene={state.scene} isLive={state.scene.id === state.activeSceneId} send={send} />
             </Section>
           )}
+          {isGm && state.scene && (
+            <Section title="Map editor">
+              <MapEditorPanel key={state.scene.id} scene={state.scene} send={send} />
+            </Section>
+          )}
           {isGm && hello.campaign.inviteCode && (
             <Section title="Invite players">
               <InviteCode code={hello.campaign.inviteCode} />
@@ -250,14 +264,19 @@ export function Campaign({ user }: { user: User }) {
               onPaintFog={(cells, reveal) => send({ type: 'fog:paint', sceneId: scene.id, cells, reveal })}
               pings={state.pings}
               onPing={(x, y) => send({ type: 'ping', sceneId: scene.id, x, y })}
+              terrain={terrain}
+              secretDoors={secretDoors}
+              onMapEdit={send}
             >
               <MapToolbar
-                tools={isGm && scene.fogEnabled ? GM_TOOLS : PLAYER_TOOLS}
+                tools={isGm ? [...(scene.fogEnabled ? GM_TOOLS : PLAYER_TOOLS), ...EDIT_TOOLS] : PLAYER_TOOLS}
                 tool={tool}
                 onTool={setTool}
                 brush={brush}
                 onBrush={setBrush}
               >
+                {isGm && tool === 'terrain' && <TerrainPicker value={terrain} onChange={setTerrain} />}
+                {isGm && tool === 'door' && <SecretDoorToggle secret={secretDoors} onChange={setSecretDoors} />}
                 {isGm && <AddTokenMenu scene={scene} members={state.members} characters={state.characters} at={viewCentreCell} send={send} />}
                 {isGm && isLive && state.displays.length > 0 && (
                   <button

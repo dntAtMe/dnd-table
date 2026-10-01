@@ -3219,6 +3219,18 @@ textarea:focus {
   fill: transparent;
 }
 
+.map:not(.map--display) .door {
+  cursor: pointer;
+}
+
+.map:not(.map--display) .door:hover .door__leaf {
+  filter: brightness(1.25);
+}
+
+.map__svg--paint .door {
+  cursor: crosshair;
+}
+
 .ruler--blocked line {
   stroke: var(--danger);
 }
@@ -3234,4 +3246,55 @@ textarea:focus {
 .map__drop--blocked {
   fill: rgb(224 106 92 / 0.18);
   stroke: var(--danger);
+}
+
+.map-toolbar__sep {
+  align-self: stretch;
+  width: 1px;
+  margin: 4px 4px;
+  background: var(--border);
+}
+
+.terrain-picker button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.terrain-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.3);
+}
+
+.terrain-swatch--none {
+  background: linear-gradient(to top right, transparent 45%, var(--danger) 45% 55%, transparent 55%) !important;
+}
+
+.terrain-swatch--difficult {
+  background: repeating-linear-gradient(45deg, #b98a3e 0 3px, #3a3027 3px 6px) !important;
+}
+
+@media (max-width: 1280px) {
+  .terrain-picker__label {
+    display: none;
+  }
+}
+
+.map-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.map-editor__side {
+  grid-template-columns: 1fr auto;
+}
+
+.map-editor__side .btn {
+  min-width: 36px;
 }

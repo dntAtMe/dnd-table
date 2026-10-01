@@ -267,7 +267,7 @@ export function SceneSettings({ scene, isLive, send }: SceneSettingsProps) {
           Show grid lines
         </label>
         <p className="hint">
-          {cols} × {rows} cells. Changing the cell count resets fog.
+          {cols} × {rows} cells. Changing the cell count resets fog; walls and terrain stay anchored to the top-left cell.
         </p>
       </fieldset>
 
