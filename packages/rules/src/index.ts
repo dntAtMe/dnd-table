@@ -8,6 +8,7 @@ export * from './grid';
 export * from './levelup';
 export * from './mapdata';
 export * from './movement';
+export * from './related';
 export * from './monsters';
 export * from './srd';
 export * from './vision';
