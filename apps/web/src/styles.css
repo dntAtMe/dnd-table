@@ -3218,3 +3218,20 @@ textarea:focus {
 .door__hit {
   fill: transparent;
 }
+
+.ruler--blocked line {
+  stroke: var(--danger);
+}
+
+.ruler--blocked circle {
+  fill: var(--danger);
+}
+
+.map-label--blocked rect {
+  stroke: var(--danger);
+}
+
+.map__drop--blocked {
+  fill: rgb(224 106 92 / 0.18);
+  stroke: var(--danger);
+}

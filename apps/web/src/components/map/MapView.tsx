@@ -1,5 +1,5 @@
 import type { CameraRect, SceneView, Token } from '@dnd/protocol';
-import { FogMask, MapData, brushCells, gridDistanceFeet, gridGeometry, pointToCell } from '@dnd/rules';
+import { FogMask, MapData, brushCells, gridGeometry, measureMove, pointToCell } from '@dnd/rules';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useElementSize } from '../../lib/useElementSize';
 import type { Ping } from '../../lib/useGameSocket';
@@ -394,6 +394,11 @@ export function MapView({
   });
   const dragToken = drag ? scene.tokens.find((t) => t.id === drag.tokenId) : undefined;
   const dragCell = drag ? cellOf(drag.x, drag.y) : undefined;
+  const dragMove = dragToken && dragCell ? measureMove(map, dragToken, dragCell, grid.feetPerCell, dragToken.size) : undefined;
+  const rulerMove = ruler ? measureMove(map, ruler.from, ruler.to, grid.feetPerCell) : undefined;
+  /** "30 ft", plus the movement cost when difficult terrain makes it dearer, and whether a wall is in the way. */
+  const moveText = (m: ReturnType<typeof measureMove>) =>
+    `${m.feet} ft${m.cost !== m.feet ? ` (${m.cost} ft move)` : ''}${m.block ? ` · ${m.block === 'wall' ? 'blocked' : 'impassable'}` : ''}`;
   const transform = cam ? `translate(${cam.x}px, ${cam.y}px) scale(${cam.k})` : undefined;
   const terrainId = `terrain-${scene.id}`;
 
@@ -446,7 +451,7 @@ export function MapView({
             )}
             {drag && (
               <rect
-                className="map__drop"
+                className={`map__drop${dragMove?.block ? ' map__drop--blocked' : ''}`}
                 x={geo.originX + cellOf(drag.x, drag.y).col * grid.size}
                 y={geo.originY + cellOf(drag.x, drag.y).row * grid.size}
                 width={(scene.tokens.find((t) => t.id === drag.tokenId)?.size ?? 1) * grid.size}
@@ -472,16 +477,17 @@ export function MapView({
               );
             })}
             <rect width={scene.width} height={scene.height} className="map__frame" strokeWidth={2 / k} />
-            {dragToken && dragCell && drag && (dragCell.col !== dragToken.col || dragCell.row !== dragToken.row) && (
+            {dragToken && dragCell && dragMove && (dragCell.col !== dragToken.col || dragCell.row !== dragToken.row) && (
               <MapLabel
                 x={geo.originX + (dragCell.col + dragToken.size / 2) * grid.size}
                 y={geo.originY + dragCell.row * grid.size}
                 k={k}
-                text={`${gridDistanceFeet(dragToken, dragCell, grid.feetPerCell)} ft`}
+                text={moveText(dragMove)}
+                className={dragMove.block ? 'map-label--blocked' : ''}
               />
             )}
-            {ruler && (
-              <g className="ruler" pointerEvents="none">
+            {ruler && rulerMove && (
+              <g className={`ruler${rulerMove.block ? ' ruler--blocked' : ''}`} pointerEvents="none">
                 <line
                   x1={cellCentre(ruler.from).x}
                   y1={cellCentre(ruler.from).y}
@@ -495,7 +501,8 @@ export function MapView({
                   x={cellCentre(ruler.to).x}
                   y={cellCentre(ruler.to).y - 6 / k}
                   k={k}
-                  text={`${gridDistanceFeet(ruler.from, ruler.to, grid.feetPerCell)} ft`}
+                  text={moveText(rulerMove)}
+                  className={rulerMove.block ? 'map-label--blocked' : ''}
                 />
               </g>
             )}
