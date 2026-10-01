@@ -191,13 +191,18 @@ interface PanelProps {
   send: Send;
   onCreate?: () => void;
   onLevelUp?: (record: CharacterRecord) => void;
+  /** Which character to show, when the caller picks it (e.g. "Sheet" on a map token). */
+  selectedId?: string | null;
+  onSelect?: (id: string) => void;
 }
 
 /** Switches between the party's characters; players start on their own. */
-export function CharacterPanel({ characters, members, userId, isGm, send, onCreate, onLevelUp }: PanelProps) {
+export function CharacterPanel({ characters, members, userId, isGm, send, onCreate, onLevelUp, ...controlled }: PanelProps) {
   const mine = characters.filter((c) => c.ownerUserId === userId);
   const ordered = [...mine, ...characters.filter((c) => c.ownerUserId !== userId)];
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [ownSelectedId, setOwnSelectedId] = useState<string | null>(null);
+  const selectedId = controlled.onSelect ? (controlled.selectedId ?? null) : ownSelectedId;
+  const setSelectedId = controlled.onSelect ?? setOwnSelectedId;
   const selected = ordered.find((c) => c.id === selectedId) ?? ordered[0];
   const ownerName = (id: string) => members.find((m) => m.userId === id)?.name ?? 'Unknown';
 
