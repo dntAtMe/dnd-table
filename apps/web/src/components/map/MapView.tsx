@@ -1,4 +1,4 @@
-import type { CameraRect, MapMessage, SceneView, Token } from '@dnd/protocol';
+import type { CameraRect, MapMessage, MapTemplate, SceneView, TemplateMessage, Token } from '@dnd/protocol';
 import {
   FogMask,
   MapData,
@@ -7,7 +7,10 @@ import {
   gridGeometry,
   measureMove,
   moveBlock,
+  normalizeAngle,
   pointToCell,
+  snapAngle,
+  snapOrigin,
   terrainCode,
   type DoorState,
   type Edge,
@@ -21,9 +24,10 @@ import { TokenDecor, type TokenDecoration } from '../combat/TokenDecor';
 import { fitRect, screenToMap, visibleRect, zoomAt, type Camera } from './camera';
 import { fogPath } from './fogPath';
 import { TerrainLayer, TerrainPatterns, WallLayer } from './MapFeatures';
+import { TemplateLayer, type TemplateSettings } from './TemplateLayer';
 import { edgeKey, edgesBetween, nearestEdge, nearestVertex, parseEdgeKey, type Vertex } from './wallPath';
 
-export type MapTool = 'move' | 'reveal' | 'hide' | 'ruler' | 'ping' | 'wall' | 'door' | 'terrain' | 'erase';
+export type MapTool = 'move' | 'reveal' | 'hide' | 'ruler' | 'ping' | 'wall' | 'door' | 'terrain' | 'erase' | 'template';
 
 export interface MapViewProps {
   scene: SceneView;
@@ -53,6 +57,12 @@ export interface MapViewProps {
   onMapEdit?: (msg: MapMessage) => void;
   /** Combat markers per token id (active turn, HP bar, Bloodied). */
   decorations?: Record<string, TokenDecoration>;
+  /** What the template tool places. */
+  templateTool?: TemplateSettings;
+  selectedTemplateId?: string | null;
+  onSelectTemplate?: (id: string | null) => void;
+  /** Places, moves and turns area templates. */
+  onTemplate?: (msg: TemplateMessage) => void;
   /** Overlay controls drawn above the map (toolbars). */
   children?: ReactNode;
 }
@@ -67,10 +77,15 @@ const FOG_FLUSH_MS = 150;
 const VERTEX_SNAP = 0.35;
 const WALL = edgeCode({ kind: 'wall' });
 const NEXT_DOOR_STATE: Record<DoorState, DoorState> = { open: 'closed', closed: 'locked', locked: 'open' };
+/** Id of the template being placed, until the server gives it a real one. */
+const DRAFT_TEMPLATE = 'draft';
 
 type Gesture =
-  /** `door` is set when the press started on a door: a click (no drag) opens or closes it. */
-  | { kind: 'pan'; pointerId: number; sx: number; sy: number; cam: Camera; moved: boolean; door?: Edge }
+  /**
+   * `door` is set when the press started on a door: a click (no drag) opens or closes it.
+   * `template` likewise selects the area template under the press.
+   */
+  | { kind: 'pan'; pointerId: number; sx: number; sy: number; cam: Camera; moved: boolean; door?: Edge; template?: string }
   | {
       kind: 'token';
       pointerId: number;
@@ -96,6 +111,18 @@ type Gesture =
       sentAt: number;
     }
   | { kind: 'ruler'; pointerId: number }
+  | {
+      /** Placing a new area template (aiming it), or moving or turning the selected one. */
+      kind: 'template';
+      pointerId: number;
+      mode: 'place' | 'move' | 'rotate';
+      /** Grab point relative to the origin, in grid units (moves). */
+      dx: number;
+      dy: number;
+      sx: number;
+      sy: number;
+      moved: boolean;
+    }
   | { kind: 'pinch'; dist: number; cx: number; cy: number; cam: Camera };
 
 type CellPos = { col: number; row: number };
@@ -173,6 +200,10 @@ export function MapView({
   secretDoors = false,
   onMapEdit,
   decorations,
+  templateTool,
+  selectedTemplateId,
+  onSelectTemplate,
+  onTemplate,
   children,
 }: MapViewProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -203,6 +234,18 @@ export function MapView({
     if (gesture.current?.kind !== 'edges') setEdgeEdits(null);
     if (gesture.current?.kind !== 'paint') setTerrainStroke(null);
   }, [scene.map]);
+  /** Template being placed, moved or turned; shown instead of the server's copy until it answers. */
+  const [templateDraft, setTemplateDraft] = useState<MapTemplate | null>(null);
+  /** The direction of the last template placed, for templates placed with a click. */
+  const lastAngle = useRef(0);
+  useEffect(() => {
+    if (gesture.current?.kind !== 'template') setTemplateDraft(null);
+  }, [scene.templates]);
+  useEffect(() => {
+    if (!templateDraft || gesture.current?.kind === 'template') return;
+    const t = setTimeout(() => setTemplateDraft(null), PENDING_MOVE_MS);
+    return () => clearTimeout(t);
+  }, [templateDraft]);
   useEffect(() => {
     if (Object.keys(pending).length === 0) return;
     const t = setTimeout(() => setPending({}), PENDING_MOVE_MS);
@@ -367,6 +410,9 @@ export function MapView({
   };
 
   const canMove = (t: Token) => isGm || (userId !== undefined && t.ownerUserId === userId);
+  const canEditTemplate = (t: MapTemplate) => isGm || (userId !== undefined && t.ownerUserId === userId);
+  /** Map pixels to grid units (see Area in @dnd/rules). */
+  const toGrid = (m: { x: number; y: number }) => ({ x: (m.x - geo.originX) / grid.size, y: (m.y - geo.originY) / grid.size });
 
   const cellOf = (x: number, y: number) => ({
     col: Math.round((x - geo.originX) / grid.size),
@@ -382,6 +428,7 @@ export function MapView({
       const g = gesture.current;
       if (g?.kind === 'paint') flushPaint(g);
       if (g?.kind === 'edges') flushEdges(g);
+      if (g?.kind === 'template') setTemplateDraft(null);
       setDrag(null);
       return startPinch();
     }
@@ -420,6 +467,54 @@ export function MapView({
       return;
     }
 
+    // Area templates: the selected one's handles (or body) move and turn it; the template tool places new ones.
+    const selectedTemplate = scene.templates.find((t) => t.id === selectedTemplateId);
+    if (e.button === 0 && onTemplate && selectedTemplate && canEditTemplate(selectedTemplate)) {
+      const target = e.target as Element;
+      const handle = target.closest('[data-template-handle]')?.getAttribute('data-template-handle');
+      const onBody = target.closest('[data-template-id]')?.getAttribute('data-template-id') === selectedTemplate.id;
+      if (handle || (onBody && tool === 'move' && !selectedTemplate.tokenId)) {
+        const at = toGrid(screenToMap(camRef.current, p.x, p.y));
+        gesture.current = {
+          kind: 'template',
+          pointerId: e.pointerId,
+          mode: handle === 'rotate' ? 'rotate' : 'move',
+          dx: at.x - selectedTemplate.x,
+          dy: at.y - selectedTemplate.y,
+          sx: p.x,
+          sy: p.y,
+          moved: false,
+        };
+        setTemplateDraft(selectedTemplate);
+        return;
+      }
+    }
+    if (tool === 'template' && templateTool && onTemplate && e.button === 0) {
+      const s = templateTool;
+      const at = toGrid(screenToMap(camRef.current, p.x, p.y));
+      const tokenId = (e.target as Element).closest('[data-token-id]')?.getAttribute('data-token-id');
+      // An Emanation pressed on one of your creatures follows it around.
+      const host = s.shape === 'emanation' ? scene.tokens.find((t) => t.id === tokenId && canMove(t)) : undefined;
+      setTemplateDraft({
+        id: DRAFT_TEMPLATE,
+        sceneId: scene.id,
+        shape: s.shape,
+        size: s.size,
+        ...(s.shape === 'line' && { width: s.width }),
+        ...(s.shape === 'cylinder' && { height: s.height }),
+        ...(host ? { x: host.col, y: host.row, span: host.size } : snapOrigin(s.shape, at.x, at.y)),
+        angle: lastAngle.current,
+        color: s.color,
+        label: s.label,
+        ownerUserId: userId ?? null,
+        tokenId: host?.id ?? null,
+        hidden: isGm && s.hidden,
+        linger: s.linger,
+      });
+      gesture.current = { kind: 'template', pointerId: e.pointerId, mode: 'place', dx: 0, dy: 0, sx: p.x, sy: p.y, moved: false };
+      return;
+    }
+
     if ((tool === 'ruler' || tool === 'ping') && e.button === 0) {
       const m = screenToMap(camRef.current, p.x, p.y);
       if (tool === 'ping') {
@@ -453,7 +548,17 @@ export function MapView({
       };
       return;
     }
-    gesture.current = { kind: 'pan', pointerId: e.pointerId, sx: p.x, sy: p.y, cam: camRef.current, moved: false, door };
+    const templateId = tool === 'move' ? (e.target as Element).closest('[data-template-id]')?.getAttribute('data-template-id') : null;
+    gesture.current = {
+      kind: 'pan',
+      pointerId: e.pointerId,
+      sx: p.x,
+      sy: p.y,
+      cam: camRef.current,
+      moved: false,
+      door,
+      template: templateId ?? undefined,
+    };
   };
 
   const onPointerMove = (e: ReactPointerEvent<SVGSVGElement>) => {
@@ -489,6 +594,18 @@ export function MapView({
       g.moved = true;
       const m = screenToMap(camRef.current!, p.x, p.y);
       setDrag({ tokenId: g.tokenId, x: m.x - g.dx, y: m.y - g.dy });
+    } else if (g.kind === 'template' && g.pointerId === e.pointerId) {
+      if (!g.moved && Math.hypot(p.x - g.sx, p.y - g.sy) <= DRAG_THRESHOLD) return;
+      g.moved = true;
+      const at = toGrid(screenToMap(camRef.current!, p.x, p.y));
+      const snap = templateTool?.snap ?? true;
+      setTemplateDraft((d) => {
+        if (!d) return d;
+        if (g.mode === 'move') return { ...d, ...snapOrigin(d.shape, at.x - g.dx, at.y - g.dy) };
+        if (Math.hypot(at.x - d.x, at.y - d.y) < 0.25) return d;
+        const angle = (Math.atan2(at.y - d.y, at.x - d.x) * 180) / Math.PI;
+        return { ...d, angle: snap ? snapAngle(angle) : normalizeAngle(Math.round(angle)) };
+      });
     } else if (g.kind === 'pinch' && pointers.current.size >= 2) {
       const [a, b] = [...pointers.current.values()];
       const dist = Math.hypot(a!.x - b!.x, a!.y - b!.y);
@@ -528,11 +645,27 @@ export function MapView({
         }
       } else if (!g.moved) {
         onSelectToken?.(isGm || g.movable ? g.tokenId : null);
+        onSelectTemplate?.(null);
       }
       setDrag(null);
+    } else if (g?.kind === 'template' && g.pointerId === e.pointerId) {
+      const d = templateDraft;
+      if (d && g.mode === 'place') {
+        lastAngle.current = d.angle;
+        const { id: _, ownerUserId: __, span: ___, tokenId, ...fields } = d;
+        onTemplate?.({ type: 'template:place', ...fields, ...(tokenId && { tokenId }) });
+      } else if (d && g.moved) {
+        onTemplate?.({ type: 'template:update', templateId: d.id, ...(g.mode === 'move' ? { x: d.x, y: d.y } : { angle: d.angle }) });
+      }
+      // Keep showing it where it was dropped until the server's copy arrives.
+      if (d && (g.mode === 'place' || g.moved)) setTemplateDraft({ ...d });
+      else setTemplateDraft(null);
     } else if (g?.kind === 'pan' && !g.moved && g.pointerId === e.pointerId) {
       if (g.door) toggleDoor(g.door);
-      else onSelectToken?.(null);
+      else {
+        onSelectToken?.(null);
+        onSelectTemplate?.(g.template ?? null);
+      }
     }
     if (pointers.current.size === 0) gesture.current = null;
   };
@@ -555,13 +688,20 @@ export function MapView({
   const moveText = (m: ReturnType<typeof measureMove>) =>
     `${m.feet} ft${m.cost !== m.feet ? ` (${m.cost} ft move)` : ''}${m.block ? ` · ${m.block === 'wall' ? 'blocked' : 'impassable'}` : ''}`;
   const transform = cam ? `translate(${cam.x}px, ${cam.y}px) scale(${cam.k})` : undefined;
+  /** Templates as shown: the one being edited replaced by its draft, Emanations following dragged tokens. */
+  const shownTemplates = scene.templates.map((t) => {
+    if (t.id === templateDraft?.id) return templateDraft;
+    const pos = drag && t.tokenId === drag.tokenId ? cellOf(drag.x, drag.y) : t.tokenId ? pending[t.tokenId] : undefined;
+    return pos ? { ...t, x: pos.col, y: pos.row } : t;
+  });
+  if (templateDraft?.id === DRAFT_TEMPLATE) shownTemplates.push(templateDraft);
   const terrainId = `terrain-${scene.id}`;
 
   return (
     <div className={`map${interactive ? '' : ' map--display'}${scene.imageUrl ? '' : ' map--blank'}`} ref={wrapRef}>
       <svg
         ref={svgRef}
-        className={`map__svg${painting || editing ? ' map__svg--paint' : ''}`}
+        className={`map__svg${painting || editing || (interactive && tool === 'template') ? ' map__svg--paint' : ''}`}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -604,6 +744,17 @@ export function MapView({
             {fog && (
               <path d={fogD} className={`map__fog${isGm ? ' map__fog--gm' : ''}`} clipPath={`url(#clip-${scene.id})`} pointerEvents="none" />
             )}
+            <TemplateLayer
+              templates={shownTemplates}
+              tokens={scene.tokens}
+              geo={geo}
+              cell={grid.size}
+              feetPerCell={grid.feetPerCell}
+              k={k}
+              selectedId={interactive ? selectedTemplateId : null}
+              canEdit={(t) => interactive && Boolean(onTemplate) && canEditTemplate(t)}
+              draftId={templateDraft?.id}
+            />
             {drag && (
               <rect
                 className={`map__drop${dragMove?.block ? ' map__drop--blocked' : ''}`}
@@ -633,6 +784,18 @@ export function MapView({
               );
             })}
             <rect width={scene.width} height={scene.height} className="map__frame" strokeWidth={2 / k} />
+            <TemplateLayer
+              overlay
+              templates={shownTemplates}
+              tokens={scene.tokens}
+              geo={geo}
+              cell={grid.size}
+              feetPerCell={grid.feetPerCell}
+              k={k}
+              selectedId={interactive ? selectedTemplateId : null}
+              canEdit={(t) => interactive && Boolean(onTemplate) && canEditTemplate(t)}
+              draftId={templateDraft?.id}
+            />
             {dragToken && dragCell && dragMove && (dragCell.col !== dragToken.col || dragCell.row !== dragToken.row) && (
               <MapLabel
                 x={geo.originX + (dragCell.col + dragToken.size / 2) * grid.size}
