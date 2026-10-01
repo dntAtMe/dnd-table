@@ -3332,3 +3332,41 @@ textarea:focus {
 .map-editor__side .btn {
   min-width: 36px;
 }
+
+/* ---------- knowledge base links ---------- */
+.rich-text {
+  white-space: pre-line;
+}
+
+.entity-link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline dotted rgb(217 164 65 / 0.6);
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
+.entity-link:hover,
+.entity-link:focus-visible {
+  color: var(--accent-strong);
+  text-decoration-style: solid;
+}
+
+.entity-link--condition {
+  color: #e8a07a;
+}
+
+.entity-link--page {
+  color: #9fc3ff;
+}
+
+.entity-link--broken,
+.entity-link--missing {
+  color: var(--faint);
+  text-decoration: underline wavy rgb(224 106 92 / 0.6);
+  cursor: default;
+}
