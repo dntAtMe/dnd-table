@@ -1,5 +1,6 @@
 import type { CharacterRecord, ClientMessage, Member, SceneView, Token } from '@dnd/protocol';
 import { useEffect, useState } from 'react';
+import { TokenVisionFields } from './TokenVision';
 
 type Send = (msg: ClientMessage) => void;
 
@@ -15,10 +16,12 @@ export const TOKEN_SIZES = [
 interface InspectorProps {
   token: Token;
   members: Member[];
+  /** Party characters, for the darkvision a character token gets from its sheet. */
+  characters?: CharacterRecord[];
   send: Send;
 }
 
-export function TokenInspector({ token, members, send }: InspectorProps) {
+export function TokenInspector({ token, members, characters = [], send }: InspectorProps) {
   const [name, setName] = useState(token.name);
   useEffect(() => setName(token.name), [token.name]);
 
@@ -83,6 +86,7 @@ export function TokenInspector({ token, members, send }: InspectorProps) {
         <input type="checkbox" checked={token.hidden} onChange={(e) => update({ hidden: e.target.checked })} />
         Hidden from players
       </label>
+      <TokenVisionFields token={token} characters={characters} send={send} />
       <button type="button" className="btn btn--sm btn--danger" onClick={() => send({ type: 'token:delete', tokenId: token.id })}>
         Remove token
       </button>

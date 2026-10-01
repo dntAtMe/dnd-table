@@ -11,6 +11,7 @@ import { MapToolbar, type ToolOption } from '../components/map/MapToolbar';
 import { MapView, type MapTool } from '../components/map/MapView';
 import { SceneSettings, ScenesPanel } from '../components/ScenePanels';
 import { AddTokenMenu, TokenInspector } from '../components/TokenPanels';
+import { LightPicker } from '../components/TokenVision';
 import { CharacterCreator } from '../components/character/CharacterCreator';
 import { CharacterPanel } from '../components/character/CharacterSheet';
 import { CombatPanel } from '../components/combat/CombatPanel';
@@ -229,7 +230,12 @@ export function Campaign({ user }: { user: User }) {
           )}
           {isGm && selectedToken && (
             <Section title="Token">
-              <TokenInspector key={selectedToken.id} token={selectedToken} members={state.members} send={send} />
+              <TokenInspector key={selectedToken.id} token={selectedToken} members={state.members} characters={state.characters} send={send} />
+            </Section>
+          )}
+          {!isGm && selectedToken && selectedToken.ownerUserId === hello.you.userId && (
+            <Section title={selectedToken.name}>
+              <LightPicker token={selectedToken} send={send} />
             </Section>
           )}
           {isGm && selectedCombatant && (
