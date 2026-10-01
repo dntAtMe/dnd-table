@@ -16,6 +16,7 @@ const COMMIT = 'bce51b3958573819e3b842fbc0cd9524fe4bc2e1';
 const OUT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../packages/rules/src/srd/data');
 
 const FILES = [
+  'Alignments',
   'Backgrounds',
   'Classes',
   'Conditions',
@@ -23,8 +24,12 @@ const FILES = [
   'Equipment',
   'Feats',
   'Features',
+  'Languages',
   'Levels',
+  'Magic-Items',
+  'Magic-Schools',
   'Monsters',
+  'Poisons',
   'Proficiencies',
   'Skills',
   'Species',
@@ -593,11 +598,37 @@ const goblin = monsters.find((m) => m.id === 'goblin-warrior');
 assert(goblin?.actions[0]?.attack?.bonus === 4 && goblin.actions[0].attack.damage[0].dice === '1d6 + 2', 'goblin warrior scimitar');
 
 // Reference text
+// Magic items: the first line of the source text is the item type ("Wondrous Item", "Armor (Any
+// Medium or Heavy, Except Hide Armor)"), the rest the description.
+const magicItems = raw['Magic-Items']
+  .map((m) => {
+    const [first, ...rest] = (m.desc ?? '').split(/ *\n/);
+    return compact({
+      id: m.index,
+      name: m.name,
+      category: m.equipment_category?.index,
+      type: clean(first),
+      rarity: m.rarity?.name,
+      attunement: m.attunement || undefined,
+      limitedTo: m['limited-to'] ? clean(m['limited-to']) : undefined,
+      variant: m.variant || undefined,
+      variants: m.variants?.length ? m.variants.map((v) => v.index) : undefined,
+      description: clean(rest.join('\n')),
+    });
+  })
+  .sort((a, b) => a.name.localeCompare(b.name));
+assert(magicItems.length > 200 && magicItems.every((m) => m.description), 'magic items incomplete');
+
 const rules = {
   conditions: Object.fromEntries(raw.Conditions.map((c) => [c.index, { name: c.name, description: clean(c.description ?? c.desc) }])),
   masteries: Object.fromEntries(raw['Weapon-Mastery-Properties'].map((m) => [m.index, { name: m.name, description: clean(m.description ?? m.desc) }])),
   weaponProperties: Object.fromEntries(raw['Weapon-Properties'].map((p) => [p.index, { name: p.name, description: clean(p.description ?? p.desc) }])),
   skills: Object.fromEntries(raw.Skills.map((s) => [camel(s.index), { name: s.name, ability: s.ability_score.index, description: clean(s.description ?? s.desc) }])),
+  damageTypes: Object.fromEntries(raw['Damage-Types'].map((d) => [d.index, { name: d.name, description: clean(d.description ?? d.desc) }])),
+  schools: Object.fromEntries(raw['Magic-Schools'].map((d) => [d.index, { name: d.name, description: clean(d.description ?? d.desc) }])),
+  alignments: Object.fromEntries(raw.Alignments.map((d) => [d.index, { name: d.name, abbreviation: d.abbreviation, description: clean(d.description ?? d.desc) }])),
+  languages: Object.fromEntries(raw.Languages.map((d) => [d.index, compact({ name: d.name, rare: d.is_rare || undefined, note: clean(d.note) || undefined })])),
+  poisons: Object.fromEntries(raw.Poisons.map((d) => [d.index, { name: d.name, type: d.type, cost: d.cost, description: clean(d.description ?? d.desc) }])),
 };
 
 mkdirSync(OUT, { recursive: true });
@@ -615,6 +646,7 @@ const written = [
   writeJson('gear', gear),
   writeJson('spells', spells),
   writeJson('monsters', monsters),
+  writeJson('magic-items', magicItems),
   writeJson('rules', rules),
 ];
 writeJson('manifest', {

@@ -170,6 +170,27 @@ export interface RulesText {
   masteries: Record<string, { name: string; description: string }>;
   weaponProperties: Record<string, { name: string; description: string }>;
   skills: Record<string, { name: string; ability: Ability; description: string }>;
+  damageTypes: Record<string, { name: string; description: string }>;
+  schools: Record<string, { name: string; description: string }>;
+  alignments: Record<string, { name: string; abbreviation: string; description: string }>;
+  languages: Record<string, { name: string; rare?: boolean; note?: string }>;
+  poisons: Record<string, { name: string; type: string; cost: number; description: string }>;
+}
+
+export interface MagicItemDef {
+  id: string;
+  name: string;
+  category?: string;
+  /** Item type line, e.g. "Wondrous Item" or "Armor (Any Medium or Heavy, Except Hide Armor)". */
+  type: string;
+  rarity?: string;
+  attunement?: boolean;
+  /** Who can attune, e.g. "Paladin" or "Spellcaster". */
+  limitedTo?: string;
+  /** A +1/+2/+3 version of a base item. */
+  variant?: boolean;
+  variants?: string[];
+  description: string;
 }
 
 export interface MonsterDamage {

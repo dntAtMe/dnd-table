@@ -5,7 +5,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./spells": "./src/srd/spells.ts",
-    "./monsters": "./src/srd/monsters.ts"
+    "./monsters": "./src/srd/monsters.ts",
+    "./magic-items": "./src/srd/magic-items.ts"
   },
   "scripts": {
     "test": "vitest run",

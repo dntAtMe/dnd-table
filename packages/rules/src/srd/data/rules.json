@@ -228,5 +228,299 @@
       "ability": "wis",
       "description": "Follow tracks, forage, find a trail, or avoid natural hazards."
     }
+  },
+  "damageTypes": {
+    "acid": {
+      "name": "Acid",
+      "description": "Corrosive liquids, digestive enzymes"
+    },
+    "bludgeoning": {
+      "name": "Bludgeoning",
+      "description": "Blunt objects, constriction, falling"
+    },
+    "cold": {
+      "name": "Cold",
+      "description": "Freezing water, icy blasts"
+    },
+    "fire": {
+      "name": "Fire",
+      "description": "Flames, unbearable heat"
+    },
+    "force": {
+      "name": "Force",
+      "description": "Pure magical energy"
+    },
+    "lightning": {
+      "name": "Lightning",
+      "description": "Electricity"
+    },
+    "necrotic": {
+      "name": "Necrotic",
+      "description": "Life-draining energy"
+    },
+    "piercing": {
+      "name": "Piercing",
+      "description": "Fangs, puncturing objects"
+    },
+    "poison": {
+      "name": "Poison",
+      "description": "Toxic gas, venom"
+    },
+    "psychic": {
+      "name": "Psychic",
+      "description": "Mind-rending energy"
+    },
+    "radiant": {
+      "name": "Radiant",
+      "description": "Holy energy, searing radiation"
+    },
+    "slashing": {
+      "name": "Slashing",
+      "description": "Claws, cutting objects"
+    },
+    "thunder": {
+      "name": "Thunder",
+      "description": "Concussive sound"
+    }
+  },
+  "schools": {
+    "abjuration": {
+      "name": "Abjuration",
+      "description": "Prevents or reverses harmful effects"
+    },
+    "conjuration": {
+      "name": "Conjuration",
+      "description": "Transports creatures or objects"
+    },
+    "divination": {
+      "name": "Divination",
+      "description": "Reveals information"
+    },
+    "enchantment": {
+      "name": "Enchantment",
+      "description": "Influences minds"
+    },
+    "evocation": {
+      "name": "Evocation",
+      "description": "Channels energy to create effects that are often destructive"
+    },
+    "illusion": {
+      "name": "Illusion",
+      "description": "Deceives the mind or senses"
+    },
+    "necromancy": {
+      "name": "Necromancy",
+      "description": "Manipulates life and death"
+    },
+    "transmutation": {
+      "name": "Transmutation",
+      "description": "Transforms creatures or objects"
+    }
+  },
+  "alignments": {
+    "lawful-good": {
+      "name": "Lawful Good",
+      "abbreviation": "LG",
+      "description": "Lawful Good creatures endeavor to do the right thing as expected by society. Someone who fights injustice and protects the innocent without hesitation is probably Lawful Good."
+    },
+    "neutral-good": {
+      "name": "Neutral Good",
+      "abbreviation": "NG",
+      "description": "Neutral Good creatures do the best they can, working within rules but not feeling bound by them. A kindly person who helps others according to their needs is probably Neutral Good."
+    },
+    "chaotic-good": {
+      "name": "Chaotic Good",
+      "abbreviation": "CG",
+      "description": "Chaotic Good creatures act as their conscience directs with little regard for what others expect. A rebel who waylays a cruel baron's tax collectors and uses the stolen money to help the poor is probably Chaotic Good."
+    },
+    "lawful-neutral": {
+      "name": "Lawful Neutral",
+      "abbreviation": "LN",
+      "description": "Lawful Neutral individuals act in accordance with law, tradition, or personal codes. Someone who follows a disciplined rule of life—and isn't swayed either by the demands of those in need or by the temptations of evil—is probably Lawful Neutral."
+    },
+    "neutral": {
+      "name": "Neutral",
+      "abbreviation": "N",
+      "description": "Neutral is the alignment of those who prefer to avoid moral questions and don't take sides, doing what seems best at the time. Someone who's bored by moral debate is probably Neutral."
+    },
+    "chaotic-neutral": {
+      "name": "Chaotic Neutral",
+      "abbreviation": "CN",
+      "description": "Chaotic Neutral creatures follow their whims, valuing their personal freedom above all else. A scoundrel who wanders the land living by their wits is probably Chaotic Neutral."
+    },
+    "lawful-evil": {
+      "name": "Lawful Evil",
+      "abbreviation": "LE",
+      "description": "Lawful Evil creatures methodically take what they want within the limits of a code of tradition, loyalty, or order. An aristocrat exploiting citizens while scheming for power is probably Lawful Evil."
+    },
+    "neutral-evil": {
+      "name": "Neutral Evil",
+      "abbreviation": "NE",
+      "description": "Neutral Evil is the alignment of those who are untroubled by the harm they cause as they pursue their desires. A criminal who robs and murders as they please is probably Neutral Evil."
+    },
+    "chaotic-evil": {
+      "name": "Chaotic Evil",
+      "abbreviation": "CE",
+      "description": "Chaotic Evil creatures act with arbitrary violence, spurred by their hatred or bloodlust. A villain pursuing schemes of vengeance and havoc is probably Chaotic Evil."
+    },
+    "unaligned": {
+      "name": "Unaligned",
+      "abbreviation": "U",
+      "description": "Most creatures that lack the capacity for rational thought don't have alignments; they are unaligned. Sharks are savage predators, for example, but they aren't evil; they are unaligned."
+    }
+  },
+  "languages": {
+    "common": {
+      "name": "Common"
+    },
+    "common-sign-language": {
+      "name": "Common Sign Language"
+    },
+    "draconic": {
+      "name": "Draconic"
+    },
+    "dwarvish": {
+      "name": "Dwarvish"
+    },
+    "elvish": {
+      "name": "Elvish"
+    },
+    "giant": {
+      "name": "Giant"
+    },
+    "gnomish": {
+      "name": "Gnomish"
+    },
+    "goblin": {
+      "name": "Goblin"
+    },
+    "halfling": {
+      "name": "Halfling"
+    },
+    "orc": {
+      "name": "Orc"
+    },
+    "abyssal": {
+      "name": "Abyssal",
+      "rare": true
+    },
+    "celestial": {
+      "name": "Celestial",
+      "rare": true
+    },
+    "deep-speech": {
+      "name": "Deep Speech",
+      "rare": true
+    },
+    "druidic": {
+      "name": "Druidic"
+    },
+    "infernal": {
+      "name": "Infernal",
+      "rare": true
+    },
+    "primordial": {
+      "name": "Primordial",
+      "rare": true,
+      "note": "Primordial includes the Aquan, Auran, Ignan, and Terran dialects. Creatures that know one of these dialects can communicate with those that know a different one."
+    },
+    "sylvan": {
+      "name": "Sylvan",
+      "rare": true
+    },
+    "thieves-cant": {
+      "name": "Thieves' Cant",
+      "rare": true
+    },
+    "undercommon": {
+      "name": "Undercommon",
+      "rare": true
+    }
+  },
+  "poisons": {
+    "assassins-blood": {
+      "name": "Assassin's Blood",
+      "type": "ingested",
+      "cost": 150,
+      "description": "A creature subjected to Assassin's Blood makes a DC 10 Constitution saving throw. On a failed save, the creature takes 6 (1d12) Poison damage and has the Poisoned condition for 24 hours. On a successful save, the creature takes half as much damage only."
+    },
+    "burnt-othur-fumes": {
+      "name": "Burnt Othur Fumes",
+      "type": "inhaled",
+      "cost": 500,
+      "description": "A creature subjected to Burnt Othur Fumes must succeed on a DC 13 Constitution saving throw or take 10 (3d6) Poison damage, and it must repeat the save at the start of each of its turns. On each successive failed save, the creature takes 3 (1d6) Poison damage. After three successful saves, the poison ends."
+    },
+    "crawler-mucus": {
+      "name": "Crawler Mucus",
+      "type": "contact",
+      "cost": 200,
+      "description": "A creature subjected to Crawler Mucus must succeed on a DC 13 Constitution saving throw or have the Poisoned condition for 1 minute. The creature also has the Paralyzed condition while Poisoned in this way. The creature repeats the save at the end of each of its turns, ending the effect on itself on a success."
+    },
+    "essence-of-ether": {
+      "name": "Essence of Ether",
+      "type": "inhaled",
+      "cost": 300,
+      "description": "A creature subjected to Essence of Ether must succeed on a DC 15 Constitution saving throw or have the Poisoned condition for 8 hours. The creature also has the Unconscious condition while Poisoned in this way. The creature wakes up if it takes damage or if another creature takes an action to shake it awake."
+    },
+    "malice": {
+      "name": "Malice",
+      "type": "inhaled",
+      "cost": 250,
+      "description": "A creature subjected to Malice must succeed on a DC 15 Constitution saving throw or have the Poisoned condition for 1 hour. The creature also has the Blinded condition while Poisoned in this way."
+    },
+    "midnight-tears": {
+      "name": "Midnight Tears",
+      "type": "ingested",
+      "cost": 1500,
+      "description": "A creature that ingests Midnight Tears suffers no effect until the stroke of midnight. Any effect that ends the Poisoned condition neutralizes this poison. If the poison hasn't been neutralized before midnight, the creature makes a DC 17 Constitution saving throw, taking 31 (9d6) Poison damage on a failed save or half as much damage on a successful one."
+    },
+    "oil-of-taggit": {
+      "name": "Oil of Taggit",
+      "type": "contact",
+      "cost": 400,
+      "description": "A creature subjected to Oil of Taggit must succeed on a DC 13 Constitution saving throw or have the Poisoned condition for 24 hours. The creature also has the Unconscious condition while Poisoned in this way. It wakes up if it takes damage."
+    },
+    "pale-tincture": {
+      "name": "Pale Tincture",
+      "type": "ingested",
+      "cost": 250,
+      "description": "A creature subjected to Pale Tincture must succeed on a DC 16 Constitution saving throw or take 3 (1d6) Poison damage and have the Poisoned condition. The Poisoned creature repeats the save every 24 hours, taking 3 (1d6) Poison damage on a failed save. The damage the poison deals can't be healed by any means while the creature remains Poisoned. After seven successful saves against the poison, the creature is no longer Poisoned."
+    },
+    "purple-worm-poison": {
+      "name": "Purple Worm Poison",
+      "type": "injury",
+      "cost": 2000,
+      "description": "A creature subjected to Purple Worm Poison makes a DC 21 Constitution saving throw, taking 35 (10d6) Poison damage on a failed save or half as much damage on a successful one."
+    },
+    "serpent-venom": {
+      "name": "Serpent Venom",
+      "type": "injury",
+      "cost": 200,
+      "description": "A creature subjected to Serpent Venom must succeed on a DC 11 Constitution saving throw, taking 10 (3d6) Poison damage on a failed save or half as much damage on a successful one."
+    },
+    "spiders-sting": {
+      "name": "Spider's Sting",
+      "type": "injury",
+      "cost": 200,
+      "description": "A creature subjected to Spider's Sting must succeed on a DC 13 Constitution saving throw or have the Poisoned condition for 1 hour. If the creature fails the save by 5 or more, the creature also has the Unconscious condition while Poisoned in this way. The creature wakes up if it takes damage or if another creature takes an action to shake it awake."
+    },
+    "torpor": {
+      "name": "Torpor",
+      "type": "ingested",
+      "cost": 600,
+      "description": "A creature subjected to Torpor poison must succeed on a DC 15 Constitution saving throw or have the Poisoned condition for 4d6 hours. The creature's Speed is halved while the creature is Poisoned in this way."
+    },
+    "truth-serum": {
+      "name": "Truth Serum",
+      "type": "ingested",
+      "cost": 150,
+      "description": "A creature subjected to Truth Serum must succeed on a DC 11 Constitution saving throw or have the Poisoned condition for 1 hour. The Poisoned creature can't knowingly communicate a lie."
+    },
+    "wyvern-poison": {
+      "name": "Wyvern Poison",
+      "type": "injury",
+      "cost": 1200,
+      "description": "A creature subjected to Wyvern Poison makes a DC 14 Constitution saving throw, taking 24 (7d6) Poison damage on a failed save or half as much damage on a successful one."
+    }
   }
 }
