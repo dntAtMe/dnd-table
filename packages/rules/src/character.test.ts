@@ -73,6 +73,9 @@ describe('computeCharacter', () => {
     expect(d.warnings).toEqual([]);
     // Soldier's origin feat is Savage Attacker; Defense is listed too.
     expect(d.features.map((f) => f.name)).toEqual(expect.arrayContaining(['Second Wind', 'Savage Attacker', 'Defense']));
+    // Each feature points at its knowledge base entry.
+    expect(d.features.find((f) => f.name === 'Second Wind')?.ref).toEqual({ kind: 'feature', id: 'fighter-second-wind' });
+    expect(d.features.find((f) => f.name === 'Savage Attacker')?.ref).toEqual({ kind: 'feat', id: 'savage-attacker' });
   });
 
   it('uses average HP, dwarven toughness and ASIs as the character levels up', () => {

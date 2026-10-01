@@ -8,10 +8,12 @@ import {
   d20Expression,
   damageExpression,
   describeDamage,
-  formatCr,
+  monsterCrText,
   monsterInitiative,
   monsterSave,
+  monsterSensesText,
   monsterSkill,
+  monsterSpeedText,
   type D20Mode,
   type MonsterAction,
   type MonsterDamage,
@@ -56,11 +58,9 @@ export function StatBlock({ monster: m, name = m.name, send }: Props) {
     roll(`${label} damage${crit ? ' (critical)' : ''}`, crit ? criticalDamage(expr) : expr);
   };
 
-  const speed = Object.entries(m.speed)
-    .map(([k, v]) => (k === 'walk' ? `${v} ft.` : `${cap(k)} ${v} ft.${k === 'fly' && m.hover ? ' (hover)' : ''}`))
-    .join(', ');
+  const speed = monsterSpeedText(m);
   const skills = Object.keys(m.skills) as Skill[];
-  const senses = [...Object.entries(m.senses).map(([k, v]) => `${cap(k)} ${v}`), `Passive Perception ${m.passivePerception}`].join(', ');
+  const senses = monsterSensesText(m);
 
   return (
     <article className="statblock">
@@ -171,7 +171,7 @@ export function StatBlock({ monster: m, name = m.name, send }: Props) {
       {m.gear && <Line label="Gear" text={m.gear} />}
       <Line label="Senses" text={senses} />
       <Line label="Languages" text={m.languages} />
-      <Line label="CR" text={`${formatCr(m.cr)} (XP ${m.xp.toLocaleString()}${m.xpInLair ? `, or ${m.xpInLair.toLocaleString()} in lair` : ''}; PB ${signed(m.profBonus)})`} />
+      <Line label="CR" text={monsterCrText(m)} />
 
       {SECTIONS.map(({ key, title }) =>
         m[key].length ? (
