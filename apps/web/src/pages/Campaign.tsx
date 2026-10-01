@@ -26,6 +26,8 @@ import { SoundboardPanel } from '../components/audio/SoundboardPanel';
 import { useAmbientAudio, useAudioPrefs } from '../components/audio/useAmbientAudio';
 import { HandoutsPanel, ShowcaseStatus } from '../components/handouts/HandoutsPanel';
 import { ShowcaseOverlay, useHandoutNotice, usePlayerShowcase } from '../components/handouts/Showcase';
+import { WikiPanel } from '../components/wiki/WikiPanel';
+import { useWikiOpenRequest, useWikiSync, useWikiUnreadCount } from '../components/wiki/wikiStore';
 import { useGameSocket, type SocketStatus } from '../lib/useGameSocket';
 
 const STATUS_TEXT: Record<SocketStatus, string> = {
@@ -53,7 +55,7 @@ function Section({ title, children, className = '', tab }: SectionProps) {
 }
 
 /** 'combat' and 'handouts' share the second phone tab with the sheet (see MobileSwitch). */
-type Tab = 'map' | 'sheet' | 'combat' | 'handouts' | 'dice' | 'log' | 'party';
+type Tab = 'map' | 'sheet' | 'combat' | 'handouts' | 'wiki' | 'dice' | 'log' | 'party';
 
 const PLAYER_TOOLS: ToolOption[] = [
   { tool: 'move', label: 'Move' },
@@ -69,9 +71,9 @@ const EDIT_TOOLS: ToolOption[] = [
   { tool: 'erase', label: 'Erase' },
 ];
 
-const TAB_LABELS: Record<Tab, string> = { map: 'Map', sheet: 'Sheet', combat: 'Combat', handouts: 'Handouts', dice: 'Dice', log: 'Log', party: 'Party' };
+const TAB_LABELS: Record<Tab, string> = { map: 'Map', sheet: 'Sheet', combat: 'Combat', handouts: 'Handouts', wiki: 'Wiki', dice: 'Dice', log: 'Log', party: 'Party' };
 /** Center views other than the map. */
-const CENTER_VIEWS = new Set<Tab>(['sheet', 'combat', 'handouts']);
+const CENTER_VIEWS = new Set<Tab>(['sheet', 'combat', 'handouts', 'wiki']);
 
 function MapEmpty({ isGm }: { isGm: boolean }) {
   return (
@@ -145,6 +147,13 @@ export function Campaign({ user }: { user: User }) {
     enabled: Boolean(hello) && audioPrefs.enabled,
     volume: audioPrefs.volume,
   });
+  // Campaign wiki: publish pages to the wiki views and the knowledge base; follow "open this page" requests.
+  useWikiSync({ campaignId: hello?.campaign.id ?? null, pages: state.wiki, isGm, userId: hello?.you.userId, members: state.members, send });
+  const unreadWiki = useWikiUnreadCount();
+  const wikiRequest = useWikiOpenRequest();
+  useEffect(() => {
+    if (wikiRequest) setTab('wiki');
+  }, [wikiRequest]);
   const selectedToken = scene?.tokens.find((t) => t.id === selectedTokenId) ?? null;
   const selectedTemplate = scene?.templates.find((t) => t.id === selectedTemplateId) ?? null;
   const canEditTemplate = Boolean(selectedTemplate && (isGm || selectedTemplate.ownerUserId === hello?.you.userId));
@@ -339,6 +348,10 @@ export function Campaign({ user }: { user: User }) {
             Handouts
             {unreadHandouts > 0 && <span className="center-switch__unread" aria-label={`${unreadHandouts} unread`}>{unreadHandouts}</span>}
           </button>
+          <button type="button" role="tab" aria-selected={tab === 'wiki'} className={tab === 'wiki' ? 'is-active' : ''} onClick={() => setTab('wiki')}>
+            Wiki
+            {unreadWiki > 0 && <span className="center-switch__unread" aria-label={`${unreadWiki} new`}>{unreadWiki}</span>}
+          </button>
         </div>
         <main className="campaign__map" data-tab="map">
           {scene ? (
@@ -472,6 +485,10 @@ export function Campaign({ user }: { user: User }) {
             send={send}
           />
         </section>
+        <section className="campaign__wiki" data-tab="wiki">
+          <MobileSwitch tab={tab} setTab={setTab} live={Boolean(combat)} unread={unreadHandouts} />
+          <WikiPanel active={tab === 'wiki'} />
+        </section>
         </div>
 
         <div className="campaign__right">
@@ -497,7 +514,7 @@ export function Campaign({ user }: { user: User }) {
             onClick={() => setTab(t === 'sheet' && combat && !CENTER_VIEWS.has(tab) ? 'combat' : t)}
           >
             {t === 'party' && isGm ? 'Manage' : t === 'sheet' && combat ? 'Combat' : TAB_LABELS[t]}
-            {t === 'sheet' && unreadHandouts > 0 && <span className="tabbar__dot" aria-label="unread handouts" />}
+            {t === 'sheet' && (unreadHandouts > 0 || unreadWiki > 0) && <span className="tabbar__dot" aria-label="unread handouts or wiki pages" />}
           </button>
         ))}
       </nav>
@@ -539,8 +556,9 @@ export function Campaign({ user }: { user: User }) {
 
 /** Phones: the sheet, the combat tracker and handouts share a tab, with this switch at the top. */
 function MobileSwitch({ tab, setTab, live, unread }: { tab: Tab; setTab: (t: Tab) => void; live: boolean; unread: number }) {
+  const unreadWiki = useWikiUnreadCount();
   return (
-    <div className="segmented segmented--full mobile-switch" role="tablist" aria-label="Sheet, combat or handouts">
+    <div className="segmented segmented--full mobile-switch" role="tablist" aria-label="Sheet, combat, handouts or wiki">
       <button type="button" role="tab" aria-selected={tab === 'sheet'} className={tab === 'sheet' ? 'is-active' : ''} onClick={() => setTab('sheet')}>
         Sheet
       </button>
@@ -551,6 +569,10 @@ function MobileSwitch({ tab, setTab, live, unread }: { tab: Tab; setTab: (t: Tab
       <button type="button" role="tab" aria-selected={tab === 'handouts'} className={tab === 'handouts' ? 'is-active' : ''} onClick={() => setTab('handouts')}>
         Handouts
         {unread > 0 && <span className="center-switch__unread" aria-label={`${unread} unread`}>{unread}</span>}
+      </button>
+      <button type="button" role="tab" aria-selected={tab === 'wiki'} className={tab === 'wiki' ? 'is-active' : ''} onClick={() => setTab('wiki')}>
+        Wiki
+        {unreadWiki > 0 && <span className="center-switch__unread" aria-label={`${unreadWiki} new`}>{unreadWiki}</span>}
       </button>
     </div>
   );
