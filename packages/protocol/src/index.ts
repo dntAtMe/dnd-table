@@ -1,7 +1,9 @@
 // Shapes shared by the server and the web client: REST payloads and WebSocket messages.
 import { z } from 'zod';
+import { HandoutMessages, type HandoutServerMessage, type HandoutView, type Showcase } from './handouts';
 import { MapMessages } from './map';
 
+export * from './handouts';
 export * from './map';
 import { ABILITIES, CHARACTER_VERSION, CONDITION_IDS, MAX_EXHAUSTION, SKILL_IDS, type Character, type Grid, type HealthStatus, type RollResult } from '@dnd/rules';
 
@@ -376,6 +378,7 @@ export const ClientMessage = z.discriminatedUnion('type', [
   }),
 
   ...MapMessages,
+  ...HandoutMessages,
 ]);
 export type ClientMessage = z.infer<typeof ClientMessage>;
 
@@ -426,6 +429,10 @@ export interface Hello {
   characters: CharacterRecord[];
   /** The running encounter, filtered for this client. */
   combat: CombatView | null;
+  /** GMs get every handout; players those shared with them; table screens none. */
+  handouts: HandoutView[];
+  /** What is shown over the map (players only get it when it's shown to them too). */
+  showcase: Showcase | null;
 }
 
 export type ServerMessage =
@@ -441,7 +448,8 @@ export type ServerMessage =
   | { type: 'characters'; characters: CharacterRecord[] }
   | { type: 'combat'; combat: CombatView | null }
   /** Sent to a table display that is not (or no longer) paired with a campaign. */
-  | { type: 'display:unpaired'; code: string };
+  | { type: 'display:unpaired'; code: string }
+  | HandoutServerMessage;
 
 /** WebSocket close codes used by the server. */
 export const CloseCode = {

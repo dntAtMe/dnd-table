@@ -114,6 +114,30 @@ const MIGRATIONS = [
     updated_at TEXT NOT NULL DEFAULT ${NOW}
   );
   `,
+  `
+  CREATE TABLE handouts (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    text TEXT NOT NULL DEFAULT '',
+    file_id TEXT REFERENCES files(id) ON DELETE SET NULL,
+    audience TEXT NOT NULL DEFAULT 'gm' CHECK (audience IN ('gm', 'all', 'players')),
+    revised_at TEXT,
+    created_at TEXT NOT NULL DEFAULT ${NOW}
+  );
+  CREATE INDEX handouts_by_campaign ON handouts (campaign_id, created_at);
+  CREATE TABLE handout_recipients (
+    handout_id TEXT NOT NULL REFERENCES handouts(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (handout_id, user_id)
+  );
+  CREATE TABLE handout_reads (
+    handout_id TEXT NOT NULL REFERENCES handouts(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    read_at TEXT NOT NULL,
+    PRIMARY KEY (handout_id, user_id)
+  );
+  `,
 ];
 
 export function openDb(file: string): DB {

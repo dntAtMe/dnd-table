@@ -6,12 +6,14 @@ import {
   type CombatView,
   type ClientRole,
   type DisplayInfo,
+  type HandoutView,
   type Hello,
   type LogEntry,
   type Member,
   type SceneSummary,
   type SceneView,
   type ServerMessage,
+  type Showcase,
 } from '@dnd/protocol';
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 
@@ -44,6 +46,10 @@ export interface GameState {
   characters: CharacterRecord[];
   /** The running encounter, filtered for this client. */
   combat: CombatView | null;
+  /** GMs: every handout; players: those shared with them, newest first. */
+  handouts: HandoutView[];
+  /** A handout or image the GM is showing over the map. */
+  showcase: Showcase | null;
   /** Latest GM framing (table displays only). */
   camera?: { sceneId: string; rect: CameraRect };
   /** Set for table displays that still need pairing. */
@@ -73,6 +79,8 @@ const initial: GameState = {
   pings: [],
   characters: [],
   combat: null,
+  handouts: [],
+  showcase: null,
 };
 
 let pingSeq = 0;
@@ -106,6 +114,8 @@ function reducer(state: GameState, action: Action): GameState {
             pings: [],
             characters: msg.characters,
             combat: msg.combat,
+            handouts: msg.handouts,
+            showcase: msg.showcase,
             camera: undefined,
             unpairedCode: undefined,
           };
@@ -134,6 +144,10 @@ function reducer(state: GameState, action: Action): GameState {
           return { ...state, characters: msg.characters };
         case 'combat':
           return { ...state, combat: msg.combat };
+        case 'handouts':
+          return { ...state, handouts: msg.handouts };
+        case 'showcase':
+          return { ...state, showcase: msg.showcase };
         case 'display:unpaired':
           return { ...initial, status: 'open', unpairedCode: msg.code };
       }

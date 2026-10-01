@@ -1043,3 +1043,163 @@ describe('combat', () => {
     expect((await playerSock.until('combat')).combat).toBeNull();
   });
 });
+
+describe('handouts', () => {
+  /** GM, Ana and Bram (players), and a paired table screen. */
+  async function handoutTable() {
+    const { gm, player, campaignId } = await campaignWithPlayer();
+    const gmSock = await gm.socket(`campaign=${campaignId}`);
+    const hello = await gmSock.until('hello');
+    expect(hello.handouts).toEqual([]);
+    const bram = await Client.register('bram', 'Bram');
+    await player.call('POST', '/api/campaigns/join', { inviteCode: hello.campaign.inviteCode });
+    await bram.call('POST', '/api/campaigns/join', { inviteCode: hello.campaign.inviteCode });
+    const anaId = (await player.call('GET', '/api/auth/me')).data.user.id as string;
+    const bramId = (await bram.call('GET', '/api/auth/me')).data.user.id as string;
+    const anaSock = await player.socket(`campaign=${campaignId}`);
+    const bramSock = await bram.socket(`campaign=${campaignId}`);
+    await anaSock.until('hello');
+    await bramSock.until('hello');
+
+    const { data: display } = await new Client().call('POST', '/api/displays');
+    const tv = await Sock.open(`ws://${base}/ws?display=${display.token}`, '');
+    await tv.until('display:unpaired');
+    await gm.call('POST', `/api/campaigns/${campaignId}/displays`, { code: display.code });
+    const tvHello = await tv.until('hello');
+    expect(tvHello.handouts).toEqual([]);
+    expect(tvHello.showcase).toBeNull();
+    return { gm, player, bram, campaignId, gmSock, anaSock, bramSock, tv, anaId, bramId, displayToken: display.token as string };
+  }
+
+  const titles = (m: { handouts: { title: string }[] }) => m.handouts.map((h) => h.title);
+
+  it('shares handouts with everyone or chosen players, and never leaks the rest', async () => {
+    const { gm, player, bram, campaignId, gmSock, anaSock, bramSock, tv, anaId } = await handoutTable();
+    const { data: image } = await gm.call('POST', `/api/campaigns/${campaignId}/files`, new Uint8Array(PNG));
+
+    // A draft stays with the GM.
+    gmSock.send({ type: 'handout:create', title: 'Secret letter', text: 'Dear Iarno,\n\nThe spiders…', fileId: null, audience: 'gm' });
+    const drafted = await gmSock.until('handouts', (m) => m.handouts.length === 1);
+    const letter = drafted.handouts[0]!;
+    expect(letter).toMatchObject({ title: 'Secret letter', audience: 'gm', sharedAt: null, imageUrl: null, userIds: [] });
+    expect((await anaSock.until('handouts')).handouts).toEqual([]);
+    expect((await bramSock.until('handouts')).handouts).toEqual([]);
+
+    // Shared with Ana only: Bram never receives it, live or on reconnect.
+    gmSock.send({ type: 'handout:create', title: 'Map of Phandalin', text: '', fileId: image.id, audience: 'players', userIds: [anaId] });
+    const shared = await gmSock.until('handouts', (m) => m.handouts.length === 2);
+    const map = shared.handouts.find((h) => h.title === 'Map of Phandalin')!;
+    expect(map).toMatchObject({ imageUrl: image.url, audience: 'players', userIds: [anaId] });
+    expect(map.sharedAt).not.toBeNull();
+    const anaView = await anaSock.until('handouts', (m) => m.handouts.length === 1);
+    expect(anaView.handouts).toEqual([{ id: map.id, title: 'Map of Phandalin', text: '', imageUrl: image.url, sharedAt: map.sharedAt, unread: true }]);
+    expect((await bramSock.until('handouts')).handouts).toEqual([]);
+    bramSock.close();
+    const bramAgain = await bram.socket(`campaign=${campaignId}`);
+    expect((await bramAgain.until('hello')).handouts).toEqual([]);
+
+    // Players can't author handouts or open ones that aren't theirs.
+    anaSock.send({ type: 'handout:create', title: 'Forged', text: '', fileId: null, audience: 'all' });
+    expect(await anaSock.until('error')).toMatchObject({ message: 'Only the GM can do that' });
+    anaSock.send({ type: 'handout:read', handoutId: letter.id });
+    expect(await anaSock.until('error')).toMatchObject({ message: 'Handout not found' });
+    bramAgain.send({ type: 'handout:read', handoutId: map.id });
+    expect(await bramAgain.until('error')).toMatchObject({ message: 'Handout not found' });
+
+    // Reading clears the unread marker; a change while shared sets it again.
+    anaSock.send({ type: 'handout:read', handoutId: map.id });
+    expect((await anaSock.until('handouts')).handouts[0]).toMatchObject({ id: map.id, unread: false });
+    gmSock.send({ type: 'handout:update', handoutId: map.id, text: 'X marks the hideout.' });
+    expect((await anaSock.until('handouts')).handouts[0]).toMatchObject({ text: 'X marks the hideout.', unread: true });
+
+    // Shared with everyone, newest first for players.
+    gmSock.send({ type: 'handout:update', handoutId: letter.id, audience: 'all' });
+    expect(titles(await bramAgain.until('handouts', (m) => m.handouts.length === 1))).toEqual(['Secret letter']);
+    expect(titles(await anaSock.until('handouts', (m) => m.handouts.length === 2))).toEqual(['Secret letter', 'Map of Phandalin']);
+    const anaHello = await (await player.socket(`campaign=${campaignId}`)).until('hello');
+    expect(titles(anaHello)).toEqual(['Secret letter', 'Map of Phandalin']);
+
+    // Un-sharing makes it a draft again; deleting removes it.
+    gmSock.send({ type: 'handout:update', handoutId: letter.id, audience: 'gm' });
+    expect((await bramAgain.until('handouts')).handouts).toEqual([]);
+    const unshared = await gmSock.until('handouts', (m) => m.handouts.some((h) => h.id === letter.id && h.audience === 'gm'));
+    expect(unshared.handouts.find((h) => h.id === letter.id)!.sharedAt).toBeNull();
+    gmSock.send({ type: 'handout:delete', handoutId: map.id });
+    expect((await anaSock.until('handouts', (m) => m.handouts.length === 0)).handouts).toEqual([]);
+    expect(titles(await gmSock.until('handouts', (m) => m.handouts.length === 1))).toEqual(['Secret letter']);
+
+    // Recipients must be players here, and images must belong to the campaign.
+    const { data: gmMe } = await gm.call('GET', '/api/auth/me');
+    gmSock.send({ type: 'handout:update', handoutId: letter.id, audience: 'players', userIds: [gmMe.user.id] });
+    expect(await gmSock.until('error')).toMatchObject({ message: 'That player is not in this campaign' });
+    const { data: other } = await gm.call('POST', '/api/campaigns', { name: 'Other' });
+    const { data: foreign } = await gm.call('POST', `/api/campaigns/${other.id}/files`, new Uint8Array(PNG));
+    gmSock.send({ type: 'handout:update', handoutId: letter.id, fileId: foreign.id });
+    expect(await gmSock.until('error')).toMatchObject({ message: 'Image not found' });
+    const { data: song } = await gm.call('POST', `/api/campaigns/${campaignId}/files`, AUDIO.ogg);
+    gmSock.send({ type: 'handout:create', title: 'Song', text: '', fileId: song.id, audience: 'all' });
+    expect(await gmSock.until('error')).toMatchObject({ message: 'Image not found' });
+
+    // Table screens never receive handout lists.
+    tv.send({ type: 'handout:read', handoutId: letter.id });
+    gmSock.send({ type: 'chat', text: 'done', visibility: 'public' });
+    const seen: string[] = [];
+    for (;;) {
+      const msg = await tv.next();
+      seen.push(msg.type);
+      if (msg.type === 'log') break;
+    }
+    expect(seen).not.toContain('handouts');
+  });
+
+  it('shows handouts and images over the map on table screens, and on players only when asked', async () => {
+    const { gm, player, campaignId, gmSock, anaSock, tv, displayToken } = await handoutTable();
+    gmSock.send({ type: 'handout:create', title: 'Wanted poster', text: 'Reward: 50 gp', fileId: null, audience: 'gm' });
+    const posterId = (await gmSock.until('handouts', (m) => m.handouts.length === 1)).handouts[0]!.id;
+
+    // A draft shown on the table reaches the table and the GM, not players.
+    gmSock.send({ type: 'showcase:show', handoutId: posterId, toPlayers: false });
+    const onTv = await tv.until('showcase');
+    expect(onTv.showcase).toMatchObject({ handoutId: posterId, title: 'Wanted poster', text: 'Reward: 50 gp', imageUrl: null, toPlayers: false });
+    expect((await gmSock.until('showcase')).showcase).toEqual(onTv.showcase);
+    expect((await anaSock.until('showcase')).showcase).toBeNull();
+
+    // Editing what's shown updates it in place; players still don't get it.
+    gmSock.send({ type: 'handout:update', handoutId: posterId, text: 'Reward: 100 gp' });
+    const edited = await tv.until('showcase');
+    expect(edited.showcase).toMatchObject({ id: onTv.showcase!.id, text: 'Reward: 100 gp' });
+    expect((await anaSock.until('showcase')).showcase).toBeNull();
+
+    // Any uploaded image, also on players' screens.
+    const { data: image } = await gm.call('POST', `/api/campaigns/${campaignId}/files`, new Uint8Array(PNG));
+    gmSock.send({ type: 'showcase:show', fileId: image.id, title: 'The dragon', toPlayers: true });
+    const forAna = await anaSock.until('showcase', (m) => m.showcase !== null);
+    expect(forAna.showcase).toMatchObject({ handoutId: null, title: 'The dragon', imageUrl: image.url, toPlayers: true });
+    expect((await tv.until('showcase')).showcase).toEqual(forAna.showcase);
+
+    // Late joiners see what's on the table.
+    const tv2 = await Sock.open(`ws://${base}/ws?display=${displayToken}`, '');
+    expect((await tv2.until('hello')).showcase).toEqual(forAna.showcase);
+    const ana2 = await player.socket(`campaign=${campaignId}`);
+    expect((await ana2.until('hello')).showcase).toEqual(forAna.showcase);
+
+    // Only the GM controls the table.
+    anaSock.send({ type: 'showcase:clear' });
+    expect(await anaSock.until('error')).toMatchObject({ message: 'Only the GM can do that' });
+    gmSock.send({ type: 'showcase:show', toPlayers: false });
+    expect(await gmSock.until('error')).toMatchObject({ message: 'Nothing to show' });
+
+    // Back to the map.
+    gmSock.send({ type: 'showcase:clear' });
+    expect((await tv2.until('showcase')).showcase).toBeNull();
+    expect((await ana2.until('showcase')).showcase).toBeNull();
+
+    // Deleting a handout that's on show takes it down.
+    gmSock.send({ type: 'showcase:show', handoutId: posterId, toPlayers: true });
+    await tv2.until('showcase', (m) => m.showcase?.handoutId === posterId);
+    gmSock.send({ type: 'handout:delete', handoutId: posterId });
+    expect((await tv2.until('showcase')).showcase).toBeNull();
+    tv.close();
+    tv2.close();
+  });
+});
