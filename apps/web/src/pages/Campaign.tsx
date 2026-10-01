@@ -6,15 +6,16 @@ import { DiceTray } from '../components/DiceTray';
 import { LogFeed } from '../components/LogFeed';
 import { DisplaysPanel, InviteCode, PartyList } from '../components/Panels';
 import { RollView } from '../components/RollView';
-import { MapEditorPanel, SecretDoorToggle, TerrainPicker } from '../components/map/MapEditorPanel';
+import { SecretDoorToggle, TerrainPicker } from '../components/map/MapEditorPanel';
+import { SceneEditCard } from '../components/map/SceneEditCard';
 import { MapToolbar, type ToolOption } from '../components/map/MapToolbar';
 import { MapView, type MapTool } from '../components/map/MapView';
 import { TokenActions } from '../components/map/TokenActions';
 import { DEFAULT_TEMPLATE_SETTINGS, type TemplateSettings } from '../components/map/TemplateLayer';
 import { TemplateCard, TemplateOptions } from '../components/map/TemplatePanel';
-import { SceneSettings, ScenesPanel } from '../components/ScenePanels';
-import { AddTokenMenu, TokenInspector } from '../components/TokenPanels';
-import { LightPicker, VisionPreviewPicker, sheetDarkvision } from '../components/TokenVision';
+import { ScenesPanel } from '../components/ScenePanels';
+import { AddTokenMenu } from '../components/TokenPanels';
+import { VisionPreviewPicker, sheetDarkvision } from '../components/TokenVision';
 import { CharacterCreator } from '../components/character/CharacterCreator';
 import { CharacterPanel } from '../components/character/CharacterSheet';
 import { CombatPanel } from '../components/combat/CombatPanel';
@@ -36,6 +37,8 @@ import { PopupLayer } from '../components/knowledge/PopupLayer';
 import { RichText } from '../components/knowledge/RichText';
 import { QuickSearch, useQuickSearchShortcut } from '../components/knowledge/QuickSearch';
 import { useGameSocket, type SocketStatus } from '../lib/useGameSocket';
+import { useMediaQuery } from '../lib/useMediaQuery';
+import { useStoredState } from '../lib/useStoredState';
 
 const STATUS_TEXT: Record<SocketStatus, string> = {
   connecting: 'Connecting…',
@@ -46,16 +49,18 @@ const STATUS_TEXT: Record<SocketStatus, string> = {
 
 interface SectionProps {
   title: string;
+  /** For a section that is the only one under a sidebar tab of the same name. */
+  hideTitle?: boolean;
   children: ReactNode;
   className?: string;
   /** Which mobile tab shows this section. */
   tab?: Tab;
 }
 
-function Section({ title, children, className = '', tab }: SectionProps) {
+function Section({ title, hideTitle = false, children, className = '', tab }: SectionProps) {
   return (
-    <section className={`panel ${className}`} data-tab={tab}>
-      <h2 className="panel__title">{title}</h2>
+    <section className={`panel ${className}`} data-tab={tab} aria-label={hideTitle ? title : undefined}>
+      {!hideTitle && <h2 className="panel__title">{title}</h2>}
       {children}
     </section>
   );
@@ -72,6 +77,7 @@ const PLAYER_TOOLS: ToolOption[] = [
 ];
 const GM_TOOLS: ToolOption[] = [...PLAYER_TOOLS, { tool: 'reveal', label: 'Reveal' }, { tool: 'hide', label: 'Hide' }];
 const EDIT_TOOLS: ToolOption[] = [
+  { tool: 'move', label: 'Move' },
   { tool: 'wall', label: 'Wall', group: true },
   { tool: 'door', label: 'Door' },
   { tool: 'terrain', label: 'Terrain' },
@@ -89,6 +95,10 @@ const TAB_LABELS: Record<Tab, string> = {
   log: 'Log',
   party: 'Party',
 };
+/** The GM sidebar's groups: what's in play, who's at the table, and sound. */
+type SideTab = 'scenes' | 'party' | 'sound';
+const SIDE_TABS: readonly SideTab[] = ['scenes', 'party', 'sound'];
+
 /** Center views other than the map. */
 const CENTER_VIEWS = new Set<Tab>(['sheet', 'combat', 'handouts', 'compendium', 'wiki']);
 
@@ -122,6 +132,12 @@ export function Campaign({ user }: { user: User }) {
   const [toast, setToast] = useState<string>();
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
   const [tool, setTool] = useState<MapTool>('move');
+  /** GM: playing (tokens, fog brush, areas) or editing the scene (walls, doors, terrain, settings). */
+  const [mapMode, setMapMode] = useState<'play' | 'edit'>('play');
+  const switchMapMode = (mode: 'play' | 'edit') => {
+    setMapMode(mode);
+    setTool(mode === 'edit' ? 'wall' : 'move');
+  };
   const [brush, setBrush] = useState(3);
   const [terrain, setTerrain] = useState<TerrainId>('floor');
   const [secretDoors, setSecretDoors] = useState(false);
@@ -130,6 +146,7 @@ export function Campaign({ user }: { user: User }) {
   const [creating, setCreating] = useState(false);
   const [levelingId, setLevelingId] = useState<string | null>(null);
   const [sheetId, setSheetId] = useState<string | null>(null);
+  const [sideTab, setSideTab] = useStoredState<SideTab>('gm-side-tab', 'scenes', SIDE_TABS);
   const openSheet = useCallback((characterId: string) => {
     setSheetId(characterId);
     setTab('sheet');
@@ -193,6 +210,9 @@ export function Campaign({ user }: { user: User }) {
   const selectedTemplate = scene?.templates.find((t) => t.id === selectedTemplateId) ?? null;
   const canEditTemplate = Boolean(selectedTemplate && (isGm || selectedTemplate.ownerUserId === hello?.you.userId));
   const { combat } = state;
+  const editingScene = isGm && mapMode === 'edit';
+  /** Phone layout: the sidebar is a tab of its own, so scene editing happens on the map. */
+  const phone = useMediaQuery('(max-width: 960px)');
   const decorations = useMemo(
     () => tokenDecorations(combat, scene?.tokens ?? [], { isGm, userId: hello?.you.userId }),
     [combat, scene?.tokens, isGm, hello?.you.userId],
@@ -313,55 +333,48 @@ export function Campaign({ user }: { user: User }) {
 
       <div className="campaign__grid">
         <aside className="campaign__side" data-tab="party">
-          <Section title={`Party · ${online} online`}>
-            <PartyList members={state.members} />
-          </Section>
-          {isGm && (
-            <Section title="Scenes">
-              <ScenesPanel
-                campaignId={hello.campaign.id}
-                scenes={state.scenes}
-                activeSceneId={state.activeSceneId}
-                openSceneId={state.scene?.id ?? null}
-                send={send}
-              />
-            </Section>
-          )}
-          {isGm && selectedToken && (
-            <Section title="Token">
-              <TokenInspector key={selectedToken.id} token={selectedToken} members={state.members} characters={state.characters} send={send} />
-            </Section>
-          )}
-          {!isGm && selectedToken && selectedToken.ownerUserId === hello.you.userId && (
-            <Section title={selectedToken.name}>
-              <LightPicker token={selectedToken} send={send} />
-            </Section>
-          )}
-          {isGm && (
-            <Section title="Soundboard">
-              <SoundboardPanel campaignId={hello.campaign.id} tracks={state.tracks} audio={state.audio} send={send} />
-            </Section>
-          )}
-          {isGm && state.scene && (
-            <Section title="Scene settings">
-              <SceneSettings key={state.scene.id} scene={state.scene} isLive={state.scene.id === state.activeSceneId} send={send} />
-            </Section>
-          )}
-          {isGm && state.scene && (
-            <Section title="Map editor">
-              <MapEditorPanel key={state.scene.id} scene={state.scene} send={send} />
-            </Section>
-          )}
-          {isGm && hello.campaign.inviteCode && (
-            <Section title="Invite players">
-              <InviteCode code={hello.campaign.inviteCode} />
-              <p className="hint">Players join from their home screen with this code.</p>
-            </Section>
-          )}
-          {isGm && (
-            <Section title="Table displays">
-              <DisplaysPanel campaignId={hello.campaign.id} displays={state.displays} />
-            </Section>
+          {editingScene && !phone && state.scene ? (
+            <SceneEditCard variant="panel" scene={state.scene} isLive={isLive} send={send} onDone={() => switchMapMode('play')} />
+          ) : isGm ? (
+            <>
+              <SideTabs value={sideTab} onChange={setSideTab} online={online} playing={state.audio.layers.some((l) => l.playing)} />
+              <div className="side-pane" hidden={sideTab !== 'scenes'}>
+                <Section title="Scenes" hideTitle>
+                  <ScenesPanel
+                    campaignId={hello.campaign.id}
+                    scenes={state.scenes}
+                    activeSceneId={state.activeSceneId}
+                    openSceneId={state.scene?.id ?? null}
+                    send={send}
+                  />
+                </Section>
+              </div>
+              <div className="side-pane" hidden={sideTab !== 'party'}>
+                <Section title={`Party · ${online} online`}>
+                  <PartyList members={state.members} />
+                </Section>
+                {hello.campaign.inviteCode && (
+                  <Section title="Invite players">
+                    <InviteCode code={hello.campaign.inviteCode} />
+                    <p className="hint">Players join from their home screen with this code.</p>
+                  </Section>
+                )}
+                <Section title="Table displays">
+                  <DisplaysPanel campaignId={hello.campaign.id} displays={state.displays} />
+                </Section>
+              </div>
+              <div className="side-pane" hidden={sideTab !== 'sound'}>
+                <Section title="Soundboard" hideTitle>
+                  <SoundboardPanel campaignId={hello.campaign.id} tracks={state.tracks} audio={state.audio} send={send} />
+                </Section>
+              </div>
+            </>
+          ) : (
+            <>
+              <Section title={`Party · ${online} online`}>
+                <PartyList members={state.members} />
+              </Section>
+            </>
           )}
         </aside>
 
@@ -421,6 +434,7 @@ export function Campaign({ user }: { user: User }) {
                   token={token}
                   combat={combat}
                   characters={state.characters}
+                  members={state.members}
                   isGm={isGm}
                   userId={hello.you.userId}
                   send={send}
@@ -430,15 +444,27 @@ export function Campaign({ user }: { user: User }) {
               )}
             >
               <MapToolbar
-                tools={isGm ? [...(scene.fogEnabled ? GM_TOOLS : PLAYER_TOOLS), ...EDIT_TOOLS] : PLAYER_TOOLS}
+                tools={!isGm ? PLAYER_TOOLS : editingScene ? EDIT_TOOLS : scene.fogEnabled ? GM_TOOLS : PLAYER_TOOLS}
                 tool={tool}
                 onTool={setTool}
                 brush={brush}
                 onBrush={setBrush}
+                lead={
+                  isGm && (
+                    <div className="segmented map-mode" role="radiogroup" aria-label="Map mode">
+                      <button type="button" role="radio" aria-checked={!editingScene} className={editingScene ? '' : 'is-active'} onClick={() => switchMapMode('play')}>
+                        Play
+                      </button>
+                      <button type="button" role="radio" aria-checked={editingScene} className={editingScene ? 'is-active' : ''} onClick={() => switchMapMode('edit')} title="Walls, doors, terrain, grid, fog and lighting">
+                        Edit scene
+                      </button>
+                    </div>
+                  )
+                }
               >
-                {isGm && tool === 'terrain' && <TerrainPicker value={terrain} onChange={setTerrain} />}
-                {isGm && tool === 'door' && <SecretDoorToggle secret={secretDoors} onChange={setSecretDoors} />}
-                {isGm && scene.vision.enabled && (
+                {editingScene && tool === 'terrain' && <TerrainPicker value={terrain} onChange={setTerrain} />}
+                {editingScene && tool === 'door' && <SecretDoorToggle secret={secretDoors} onChange={setSecretDoors} />}
+                {isGm && !editingScene && scene.vision.enabled && (
                   <VisionPreviewPicker members={state.members} value={previewUserId} onChange={setPreviewUserId} />
                 )}
                 {tool === 'template' && (
@@ -449,8 +475,8 @@ export function Campaign({ user }: { user: User }) {
                     onClear={scene.templates.length ? () => send({ type: 'template:clear', sceneId: scene.id }) : undefined}
                   />
                 )}
-                {isGm && <AddTokenMenu scene={scene} members={state.members} characters={state.characters} at={viewCentreCell} send={send} />}
-                {isGm && isLive && state.displays.length > 0 && (
+                {isGm && !editingScene && <AddTokenMenu scene={scene} members={state.members} characters={state.characters} at={viewCentreCell} send={send} />}
+                {isGm && !editingScene && isLive && state.displays.length > 0 && (
                   <button
                     type="button"
                     className={`toggle toggle--sm${followTable ? ' toggle--on' : ''}`}
@@ -462,6 +488,9 @@ export function Campaign({ user }: { user: User }) {
                   </button>
                 )}
               </MapToolbar>
+              {editingScene && phone && (
+                <SceneEditCard variant="sheet" scene={scene} isLive={isLive} send={send} onDone={() => switchMapMode('play')} />
+              )}
               {selectedTemplate && (
                 <TemplateCard
                   key={selectedTemplate.id}
@@ -612,6 +641,21 @@ export function Campaign({ user }: { user: User }) {
           {toast}
         </div>
       )}
+    </div>
+  );
+}
+
+function SideTabs({ value, onChange, online, playing }: { value: SideTab; onChange: (t: SideTab) => void; online: number; playing: boolean }) {
+  const tab = (t: SideTab, label: ReactNode) => (
+    <button type="button" role="tab" aria-selected={value === t} className={value === t ? 'is-active' : ''} onClick={() => onChange(t)}>
+      {label}
+    </button>
+  );
+  return (
+    <div className="segmented segmented--full side-tabs" role="tablist" aria-label="Sidebar">
+      {tab('scenes', 'Scenes')}
+      {tab('party', <>Party <span className="side-tabs__count">{online}</span></>)}
+      {tab('sound', <>Sound{playing && <span className="side-tabs__playing" aria-label="playing" />}</>)}
     </div>
   );
 }
