@@ -3114,3 +3114,107 @@ textarea:focus {
 .score-row--compact {
   grid-template-columns: 1fr 130px 40px 40px;
 }
+
+/* ---------- map editor: terrain, walls, doors ---------- */
+.terrain--floor {
+  fill: #6b5c4c;
+}
+
+.terrain__rock-bg {
+  fill: #181412;
+}
+
+.terrain__rock-line {
+  stroke: #2c241e;
+}
+
+.terrain__hatch {
+  stroke: rgb(217 164 65 / 0.6);
+}
+
+.terrain__difficult-bg {
+  fill: transparent;
+}
+
+.map--blank .terrain__difficult-bg {
+  fill: #6b5c4c;
+}
+
+.terrain__water-bg {
+  fill: #2f6f96;
+}
+
+.terrain__water-line {
+  fill: none;
+  stroke: rgb(255 255 255 / 0.28);
+}
+
+/* Over a map image, terrain only tints what is painted there. */
+.map:not(.map--blank) .terrain--floor {
+  opacity: 0.3;
+}
+
+.map:not(.map--blank) .terrain--rock {
+  opacity: 0.85;
+}
+
+.map:not(.map--blank) .terrain--water {
+  opacity: 0.55;
+}
+
+.walls__outline {
+  fill: none;
+  stroke: rgb(0 0 0 / 0.75);
+  stroke-linecap: square;
+}
+
+.walls__core {
+  fill: none;
+  stroke: #e9dcc4;
+  stroke-linecap: square;
+}
+
+.door__jamb {
+  fill: none;
+  stroke: #e9dcc4;
+}
+
+.door__leaf {
+  fill: #b07a3c;
+  stroke: rgb(0 0 0 / 0.8);
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+}
+
+.door--open .door__leaf {
+  fill: #d3a35e;
+}
+
+.door__swing {
+  fill: none;
+  stroke: rgb(233 220 196 / 0.55);
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.door--locked .door__leaf {
+  fill: #7a4f25;
+}
+
+.door__lock {
+  fill: var(--danger);
+  stroke: rgb(0 0 0 / 0.8);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+}
+
+.door__secret {
+  fill: rgb(165 139 220 / 0.2);
+  stroke: var(--gm);
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.door__hit {
+  fill: transparent;
+}

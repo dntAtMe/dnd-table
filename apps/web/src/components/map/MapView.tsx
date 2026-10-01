@@ -1,10 +1,11 @@
 import type { CameraRect, SceneView, Token } from '@dnd/protocol';
-import { FogMask, brushCells, gridDistanceFeet, gridGeometry, pointToCell } from '@dnd/rules';
+import { FogMask, MapData, brushCells, gridDistanceFeet, gridGeometry, pointToCell } from '@dnd/rules';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useElementSize } from '../../lib/useElementSize';
 import type { Ping } from '../../lib/useGameSocket';
 import { fitRect, screenToMap, visibleRect, zoomAt, type Camera } from './camera';
 import { fogPath } from './fogPath';
+import { TerrainLayer, TerrainPatterns, WallLayer } from './MapFeatures';
 
 export type MapTool = 'move' | 'reveal' | 'hide' | 'ruler' | 'ping';
 
@@ -168,6 +169,7 @@ export function MapView({
     return copy;
   }, [serverFog, stroke]);
   const fogD = useMemo(() => (fog ? fogPath(fog, geo, grid.size) : ''), [fog, geo, grid.size]);
+  const map = useMemo(() => MapData.decode(scene.map, geo.cols, geo.rows), [scene.map, geo.cols, geo.rows]);
 
   const fullMap: CameraRect = { x: 0, y: 0, w: scene.width, h: scene.height };
   const minZoom = size ? Math.min(size.width / scene.width, size.height / scene.height) * 0.5 : 0.05;
@@ -393,6 +395,7 @@ export function MapView({
   const dragToken = drag ? scene.tokens.find((t) => t.id === drag.tokenId) : undefined;
   const dragCell = drag ? cellOf(drag.x, drag.y) : undefined;
   const transform = cam ? `translate(${cam.x}px, ${cam.y}px) scale(${cam.k})` : undefined;
+  const terrainId = `terrain-${scene.id}`;
 
   return (
     <div className={`map${interactive ? '' : ' map--display'}${scene.imageUrl ? '' : ' map--blank'}`} ref={wrapRef}>
@@ -426,6 +429,7 @@ export function MapView({
           >
             <path d={`M${grid.size} 0H0V${grid.size}`} className="map__grid-line" strokeWidth={Math.max(1 / k, grid.size / 60)} />
           </pattern>
+          <TerrainPatterns id={terrainId} size={grid.size} />
         </defs>
         {cam && (
           <g className="map__world" style={{ transform, transformOrigin: '0 0' }}>
@@ -434,8 +438,12 @@ export function MapView({
             ) : (
               <rect width={scene.width} height={scene.height} className="map__blank" />
             )}
+            <TerrainLayer map={map} geo={geo} size={grid.size} id={terrainId} />
             {grid.visible && <rect width={scene.width} height={scene.height} fill={`url(#grid-${scene.id})`} pointerEvents="none" />}
-            {fog && <path d={fogD} className={`map__fog${isGm ? ' map__fog--gm' : ''}`} clipPath={`url(#clip-${scene.id})`} />}
+            <WallLayer map={map} geo={geo} size={grid.size} />
+            {fog && (
+              <path d={fogD} className={`map__fog${isGm ? ' map__fog--gm' : ''}`} clipPath={`url(#clip-${scene.id})`} pointerEvents="none" />
+            )}
             {drag && (
               <rect
                 className="map__drop"
