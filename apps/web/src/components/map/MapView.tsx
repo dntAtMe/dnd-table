@@ -17,7 +17,7 @@ import {
   type EdgeFeature,
   type TerrainId,
 } from '@dnd/rules';
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useElementSize } from '../../lib/useElementSize';
 import type { Ping } from '../../lib/useGameSocket';
 import { TokenDecor, type TokenDecoration } from '../combat/TokenDecor';
@@ -68,6 +68,8 @@ export interface MapViewProps {
   children?: ReactNode;
   /** GM only: preview what one player's tokens see. */
   visionPreview?: VisionPreview | null;
+  /** Quick actions shown next to the selected token (hidden while it's dragged). */
+  tokenPopup?: (token: Token) => ReactNode;
 }
 
 /** Pointer travel (px) before a press on a token becomes a drag rather than a click. */
@@ -143,6 +145,36 @@ function MapLabel({ x, y, k, text, className = '' }: { x: number; y: number; k: 
   );
 }
 
+/** Gap (px) between a token and its popup, and between the popup and the map's edges. */
+const POPUP_GAP = 10;
+
+/**
+ * Holds a popup beside a token (on screen, in px): to its right, or to its left when there's no
+ * room, kept inside the map. Phones show it as a sheet along the bottom instead (see CSS).
+ */
+function TokenPopupAnchor({ x, y, side, width, height, children }: { x: number; y: number; side: number; width: number; height: number; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setBox((b) => (b.w === el.offsetWidth && b.h === el.offsetHeight ? b : { w: el.offsetWidth, h: el.offsetHeight }));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const right = x + side + POPUP_GAP;
+  const left = right + box.w <= width - POPUP_GAP ? right : Math.max(POPUP_GAP, x - POPUP_GAP - box.w);
+  const top = Math.max(POPUP_GAP, Math.min(y, height - box.h - POPUP_GAP));
+  const style = { '--popup-x': `${left}px`, '--popup-y': `${top}px` } as CSSProperties;
+  return (
+    <div ref={ref} className="token-popup" style={style} data-measured={box.w > 0 || undefined}>
+      {children}
+    </div>
+  );
+}
+
 function initials(name: string): string {
   const words = name.trim().split(/\s+/);
   return (words.length > 1 ? words[0]![0]! + words[1]![0]! : name.slice(0, 2)).toUpperCase();
@@ -209,6 +241,7 @@ export function MapView({
   onTemplate,
   children,
   visionPreview,
+  tokenPopup,
 }: MapViewProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -648,7 +681,7 @@ export function MapView({
           onMoveToken?.(g.tokenId, col, row);
         }
       } else if (!g.moved) {
-        onSelectToken?.(isGm || g.movable ? g.tokenId : null);
+        onSelectToken?.(g.tokenId);
         onSelectTemplate?.(null);
       }
       setDrag(null);
@@ -700,6 +733,8 @@ export function MapView({
   });
   if (templateDraft?.id === DRAFT_TEMPLATE) shownTemplates.push(templateDraft);
   const terrainId = `terrain-${scene.id}`;
+  const popupToken = interactive && tokenPopup && cam && drag?.tokenId !== selectedTokenId ? scene.tokens.find((t) => t.id === selectedTokenId) : undefined;
+  const popupPos = popupToken ? (pending[popupToken.id] ?? popupToken) : undefined;
 
   return (
     <div className={`map${interactive ? '' : ' map--display'}${scene.imageUrl ? '' : ' map--blank'}`} ref={wrapRef}>
@@ -844,6 +879,18 @@ export function MapView({
         )}
       </svg>
       {children}
+      {popupToken && popupPos && cam && size && (
+        <TokenPopupAnchor
+          key={popupToken.id}
+          x={cam.x + (geo.originX + popupPos.col * grid.size) * cam.k}
+          y={cam.y + (geo.originY + popupPos.row * grid.size) * cam.k}
+          side={popupToken.size * grid.size * cam.k}
+          width={size.width}
+          height={size.height}
+        >
+          {tokenPopup!(popupToken)}
+        </TokenPopupAnchor>
+      )}
       {interactive && (
         <div className="map__zoom">
           <button type="button" onClick={() => zoomBy(1.25)} aria-label="Zoom in">
