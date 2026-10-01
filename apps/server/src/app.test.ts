@@ -292,6 +292,29 @@ const PNG = Buffer.from(
   'base64',
 );
 
+const ascii = (s: string) => new TextEncoder().encode(s);
+
+/** Tiny audio files: just enough header bytes for each format's signature. */
+const AUDIO = {
+  mp3: new Uint8Array([...ascii('ID3'), 4, 0, 0, 0, 0, 0, 0]),
+  mp3Frame: new Uint8Array([0xff, 0xfb, 0x90, 0x64, 0, 0, 0, 0]),
+  aac: new Uint8Array([0xff, 0xf1, 0x50, 0x80, 0, 0x1f, 0xfc]),
+  ogg: new Uint8Array([...ascii('OggS'), 0, 2, 0, 0, 0, 0, 0, 0, 0, 0]),
+  wav: new Uint8Array([...ascii('RIFF'), 36, 0, 0, 0, ...ascii('WAVEfmt '), 16, 0, 0, 0]),
+  m4a: new Uint8Array([0, 0, 0, 0x18, ...ascii('ftypM4A '), 0, 0, 0, 0, ...ascii('isom')]),
+  flac: new Uint8Array([...ascii('fLaC'), 0, 0, 0, 0x22]),
+};
+
+const AUDIO_FIXTURES: [string, Uint8Array, string, string][] = [
+  ['mp3 (ID3)', AUDIO.mp3, 'mp3', 'audio/mpeg'],
+  ['mp3 (frame)', AUDIO.mp3Frame, 'mp3', 'audio/mpeg'],
+  ['aac', AUDIO.aac, 'aac', 'audio/aac'],
+  ['ogg', AUDIO.ogg, 'ogg', 'audio/ogg'],
+  ['wav', AUDIO.wav, 'wav', 'audio/wav'],
+  ['m4a', AUDIO.m4a, 'm4a', 'audio/mp4'],
+  ['flac', AUDIO.flac, 'flac', 'audio/flac'],
+];
+
 describe('uploads', () => {
   it('stores images from the GM and serves them as static files', async () => {
     const { gm, player, campaignId } = await campaignWithPlayer();
@@ -308,6 +331,41 @@ describe('uploads', () => {
     const notImage = await gm.call('POST', `/api/campaigns/${campaignId}/files`, new TextEncoder().encode('<svg/>'));
     expect(notImage.status).toBe(415);
   });
+
+  it('sniffs audio by its magic bytes and enforces per-kind size limits', async () => {
+    const { gm, player, campaignId } = await campaignWithPlayer();
+    const upload = (body: Uint8Array, as = gm) => as.call('POST', `/api/campaigns/${campaignId}/files`, body);
+
+    for (const [name, bytes, ext, mime] of AUDIO_FIXTURES) {
+      const up = await upload(bytes);
+      expect(up.status, name).toBe(200);
+      expect(up.data, name).toMatchObject({ kind: 'audio', mime });
+      expect(up.data.url, name).toMatch(new RegExp(`^/files/[0-9a-f-]{36}\\.${ext}$`));
+    }
+    const served = await fetch(`http://${base}${(await upload(AUDIO.mp3)).data.url}`);
+    expect(served.headers.get('content-type')).toBe('audio/mpeg');
+    expect(Buffer.from(await served.arrayBuffer()).equals(Buffer.from(AUDIO.mp3))).toBe(true);
+    expect((await upload(new Uint8Array(PNG))).data).toMatchObject({ kind: 'image', mime: 'image/png' });
+
+    // Look-alikes and garbage are refused; so are players.
+    const riffAvi = new Uint8Array([...ascii('RIFF'), 4, 0, 0, 0, ...ascii('AVI '), 0, 0, 0, 0]);
+    for (const bad of [riffAvi, ascii('fLaX....'), new Uint8Array([0xff, 0x00, 0x00, 0x00]), ascii('MThd')]) {
+      expect((await upload(bad)).status).toBe(415);
+    }
+    expect((await upload(AUDIO.ogg, player)).status).toBe(403);
+
+    // Images keep their 30 MB limit; audio may be up to 50 MB.
+    const big = (header: Uint8Array, size: number) => {
+      const body = new Uint8Array(size);
+      body.set(header);
+      return body;
+    };
+    const tooBigImage = await upload(big(new Uint8Array(PNG), 30 * 1024 * 1024 + 1));
+    expect(tooBigImage.status).toBe(413);
+    expect(tooBigImage.data.error).toMatch(/too large/);
+    expect((await upload(big(AUDIO.mp3, 30 * 1024 * 1024 + 1))).status).toBe(200);
+    expect((await upload(big(AUDIO.mp3, 50 * 1024 * 1024 + 1))).status).toBe(413);
+  }, 20_000);
 });
 
 describe('scenes and tokens', () => {
@@ -414,6 +472,9 @@ describe('scenes and tokens', () => {
     const { data: other } = await gm.call('POST', '/api/campaigns', { name: 'Other' });
     const { data: file } = await gm.call('POST', `/api/campaigns/${other.id}/files`, new Uint8Array(PNG));
     gmSock.send({ type: 'scene:create', name: 'Stolen', fileId: file.id, width: 100, height: 100 });
+    expect(await gmSock.until('error')).toMatchObject({ message: 'Map image not found' });
+    const { data: song } = await gm.call('POST', `/api/campaigns/${campaignId}/files`, AUDIO.ogg);
+    gmSock.send({ type: 'scene:create', name: 'Song', fileId: song.id, width: 100, height: 100 });
     expect(await gmSock.until('error')).toMatchObject({ message: 'Map image not found' });
 
     const { data: mine } = await gm.call('POST', `/api/campaigns/${campaignId}/files`, new Uint8Array(PNG));

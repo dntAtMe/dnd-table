@@ -350,7 +350,8 @@ export class Hub {
 
   private createScene(conn: Conn, msg: Msg<'scene:create'>): void {
     this.requireGm(conn);
-    if (msg.fileId && this.store.getFile(msg.fileId)?.campaignId !== conn.campaignId) {
+    const file = msg.fileId ? this.store.getFile(msg.fileId) : undefined;
+    if (msg.fileId && (file?.campaignId !== conn.campaignId || !file.mime.startsWith('image/'))) {
       throw new GameError('Map image not found');
     }
     const grid = applyGridPatch(DEFAULT_GRID, msg.grid, msg.width, msg.height);
