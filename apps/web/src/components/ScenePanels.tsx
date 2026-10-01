@@ -1,6 +1,6 @@
 import type { ClientMessage, SceneSummary, SceneView } from '@dnd/protocol';
 import { LIGHTING_LABELS, LIGHTING_LEVELS, gridGeometry, type Grid, type Lighting } from '@dnd/rules';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { api, errorMessage } from '../lib/api';
 
 type Send = (msg: ClientMessage) => void;
@@ -28,6 +28,8 @@ export function ScenesPanel({ campaignId, scenes, activeSceneId, openSceneId, se
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const fileInput = useRef<HTMLInputElement>(null);
+  /** The new-scene form stays tucked away once there are scenes to pick from. */
+  const [adding, setAdding] = useState(false);
 
   const create = async (e: FormEvent) => {
     e.preventDefault();
@@ -56,6 +58,7 @@ export function ScenesPanel({ campaignId, scenes, activeSceneId, openSceneId, se
       }
       setName('');
       setFile(null);
+      setAdding(false);
       if (fileInput.current) fileInput.current.value = '';
     } catch (err) {
       setError(errorMessage(err));
@@ -111,8 +114,13 @@ export function ScenesPanel({ campaignId, scenes, activeSceneId, openSceneId, se
           })}
         </ul>
       )}
+      {scenes.length > 0 && !adding ? (
+        <button type="button" className="btn btn--sm btn--ghost scenes__add" onClick={() => setAdding(true)}>
+          + New scene
+        </button>
+      ) : (
       <form className="stack scenes__new" onSubmit={create}>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New scene name" maxLength={80} />
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New scene name" maxLength={80} autoFocus={adding} />
         <label className="file-input">
           <input
             ref={fileInput}
@@ -123,10 +131,18 @@ export function ScenesPanel({ campaignId, scenes, activeSceneId, openSceneId, se
           <span>{file ? file.name : 'Choose a map image (or leave empty for a blank grid)'}</span>
         </label>
         {error && <p className="form-error">{error}</p>}
-        <button type="submit" className="btn" disabled={busy}>
-          {busy ? 'Uploading…' : 'Create scene'}
-        </button>
+        <div className="button-row">
+          <button type="submit" className="btn" disabled={busy}>
+            {busy ? 'Uploading…' : 'Create scene'}
+          </button>
+          {adding && (
+            <button type="button" className="btn btn--ghost" onClick={() => setAdding(false)} disabled={busy}>
+              Cancel
+            </button>
+          )}
+        </div>
       </form>
+      )}
     </div>
   );
 }
@@ -155,6 +171,19 @@ function useThrottled<T>(fn: (value: T) => void, ms: number): (value: T) => void
       }, ms - (now - last.current));
     }
   };
+}
+
+/** A collapsible group of settings whose summary line shows its current state. */
+export function EditSection({ title, meta, open, children }: { title: string; meta?: ReactNode; open?: boolean; children: ReactNode }) {
+  return (
+    <details className="edit-section" open={open}>
+      <summary>
+        <span className="edit-section__title">{title}</span>
+        {meta !== undefined && <span className="edit-section__meta">{meta}</span>}
+      </summary>
+      <div className="edit-section__body">{children}</div>
+    </details>
+  );
 }
 
 interface SceneSettingsProps {
@@ -199,8 +228,8 @@ export function SceneSettings({ scene, isLive, send }: SceneSettingsProps) {
       </form>
       {!isLive && <p className="hint">Only you can see this scene until you press Show.</p>}
 
-      <fieldset className="fields" onPointerDown={() => (editing.current = true)} onPointerUp={() => (editing.current = false)}>
-        <legend>Grid</legend>
+      <EditSection title="Grid" meta={`${cols} × ${rows} · ${grid.feetPerCell} ft`}>
+      <div className="fields" onPointerDown={() => (editing.current = true)} onPointerUp={() => (editing.current = false)}>
         <label className="field-row">
           <span>Cells across</span>
           <input
@@ -269,10 +298,11 @@ export function SceneSettings({ scene, isLive, send }: SceneSettingsProps) {
         <p className="hint">
           {cols} × {rows} cells. Changing the cell count resets fog; walls and terrain stay anchored to the top-left cell.
         </p>
-      </fieldset>
+      </div>
+      </EditSection>
 
-      <fieldset className="fields">
-        <legend>Fog of war</legend>
+      <EditSection title="Fog of war" meta={scene.fogEnabled ? 'On' : 'Off'}>
+      <div className="fields">
         <label className="check">
           <input
             type="checkbox"
@@ -291,10 +321,11 @@ export function SceneSettings({ scene, isLive, send }: SceneSettingsProps) {
             </button>
           </div>
         )}
-      </fieldset>
+      </div>
+      </EditSection>
 
-      <fieldset className="fields">
-        <legend>Lighting &amp; vision</legend>
+      <EditSection title="Lighting & vision" meta={`${LIGHTING_LABELS[scene.vision.lighting]}${scene.vision.enabled ? ' · token vision' : ''}`}>
+      <div className="fields">
         <label className="field-row">
           <span>Light</span>
           <select
@@ -330,7 +361,8 @@ export function SceneSettings({ scene, isLive, send }: SceneSettingsProps) {
           Walls, closed doors and solid rock block sight. Set light sources and darkvision on tokens; characters bring their own
           darkvision.{scene.vision.enabled && ' Dynamic fog turns fog of war on and keeps explored areas mapped.'}
         </p>
-      </fieldset>
+      </div>
+      </EditSection>
     </div>
   );
 }

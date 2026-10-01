@@ -1,5 +1,6 @@
 import type { ClientMessage, SceneView } from '@dnd/protocol';
 import { TERRAINS, gridGeometry, type GridResize, type TerrainId } from '@dnd/rules';
+import { EditSection } from '../ScenePanels';
 import { TERRAIN_SWATCH } from './MapFeatures';
 
 type Send = (msg: ClientMessage) => void;
@@ -48,7 +49,7 @@ const SIDES = [
   { side: 'right', label: 'Right', unit: 'column' },
 ] as const;
 
-/** GM sidebar section: grid size for blank maps, and whole-map fills. */
+/** Edit scene card sections: map size for blank maps, whole-map fills, and how the tools work. */
 export function MapEditorPanel({ scene, send }: { scene: SceneView; send: Send }) {
   const { cols, rows } = gridGeometry(scene.grid, scene.width, scene.height);
   const resize = (side: keyof GridResize, by: number) =>
@@ -58,14 +59,10 @@ export function MapEditorPanel({ scene, send }: { scene: SceneView; send: Send }
   };
 
   return (
-    <div className="map-editor">
-      {scene.imageUrl ? (
-        <p className="hint">Draw walls, doors and terrain over the picture. Image maps keep their size.</p>
-      ) : (
-        <fieldset className="fields">
-          <legend>
-            Grid size · {cols} × {rows}
-          </legend>
+    <>
+      {!scene.imageUrl && (
+        <EditSection title="Map size" meta={`${cols} × ${rows}`}>
+        <div className="fields map-editor">
           {SIDES.map(({ side, label, unit }) => (
             <div key={side} className="field-row map-editor__side">
               <span>{label}</span>
@@ -93,8 +90,12 @@ export function MapEditorPanel({ scene, send }: { scene: SceneView; send: Send }
             </div>
           ))}
           <p className="hint">Tokens, fog, walls and terrain stay where they are on the map.</p>
-        </fieldset>
+        </div>
+        </EditSection>
       )}
+      <EditSection title="Walls & terrain" open>
+      <div className="map-editor">
+      {scene.imageUrl && <p className="hint">Draw walls, doors and terrain over the picture. Image maps keep their size.</p>}
       <div className="button-row">
         <button type="button" className="btn btn--sm" onClick={() => fill('rock', 'Fill the whole map with solid rock? Then carve rooms with Floor.')}>
           Fill with rock
@@ -115,6 +116,8 @@ export function MapEditorPanel({ scene, send }: { scene: SceneView; send: Send }
         toggles secret. <b>Terrain</b>: paint with the brush. <b>Erase</b>: drag over walls and doors. With <b>Move</b>, click a
         door to open or close it.
       </p>
-    </div>
+      </div>
+      </EditSection>
+    </>
   );
 }

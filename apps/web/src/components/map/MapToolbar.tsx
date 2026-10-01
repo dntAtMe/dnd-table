@@ -53,13 +53,16 @@ interface Props {
   onTool: (tool: MapTool) => void;
   brush?: number;
   onBrush?: (brush: number) => void;
+  /** Shown before the tools (the GM's Play / Edit scene switch). */
+  lead?: ReactNode;
   children?: ReactNode;
 }
 
-export function MapToolbar({ tools, tool, onTool, brush, onBrush, children }: Props) {
+export function MapToolbar({ tools, tool, onTool, brush, onBrush, lead, children }: Props) {
   const brushTool = tool === 'reveal' || tool === 'hide' || tool === 'terrain';
   return (
     <div className="map-toolbar" role="toolbar" aria-label="Map tools">
+      {lead}
       <div className="map-toolbar__tools">
         {tools.flatMap((t) => [
           t.group ? <span key={`${t.tool}-sep`} className="map-toolbar__sep" aria-hidden="true" /> : null,
