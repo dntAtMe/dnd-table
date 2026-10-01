@@ -71,7 +71,8 @@ export function WikiPanel({ active = true }: { /** Whether it is on screen; page
   );
   const tokens = normalize(query).split(' ').filter(Boolean);
   const filtered = pages.filter((p) => (!category || p.category === category) && tokens.every((t) => haystacks.get(p.id)!.includes(t)));
-  const groups = WIKI_CATEGORIES.map((c) => [c, filtered.filter((p) => p.category === c)] as const).filter(([, list]) => list.length > 0);
+  const byTitle = (a: WikiPage, b: WikiPage) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' });
+  const groups = WIKI_CATEGORIES.map((c) => [c, filtered.filter((p) => p.category === c).sort(byTitle)] as const).filter(([, list]) => list.length > 0);
   const present = WIKI_CATEGORIES.filter((c) => pages.some((p) => p.category === c));
   const exact = query.trim() ? findPageByName(query, pages) : undefined;
   const open = Boolean(current || creating !== null);

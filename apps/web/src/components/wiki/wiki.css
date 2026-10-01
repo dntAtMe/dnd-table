@@ -339,6 +339,12 @@ button.wiki-tag:hover {
   cursor: pointer;
 }
 
+/* Players: a link to a page they can't see reads as plain text, not as a "missing page". */
+.wiki-body--reader .entity-link--broken {
+  color: inherit;
+  text-decoration: none;
+}
+
 .wiki-create-prompt {
   display: flex;
   flex-wrap: wrap;

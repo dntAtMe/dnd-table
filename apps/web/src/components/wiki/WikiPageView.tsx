@@ -148,7 +148,7 @@ function WikiBody({ text, self, onNavigate }: { text: string; self: EntryRef; on
   const unique = useMemo(() => [...new Map(broken.map((n) => [n.toLowerCase(), n])).values()], [broken]);
 
   return (
-    <div ref={box} className={`wiki-body${create ? ' wiki-body--gm' : ''}`} onClickCapture={onClickCapture}>
+    <div ref={box} className={`wiki-body ${create ? 'wiki-body--gm' : 'wiki-body--reader'}`} onClickCapture={onClickCapture}>
       <RichText text={text} self={self} className="wiki-text" />
       {create && prompt && (
         <div className="wiki-create-prompt" role="dialog" aria-label="Create page">

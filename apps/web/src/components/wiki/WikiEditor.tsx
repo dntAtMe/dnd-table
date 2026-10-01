@@ -284,7 +284,7 @@ export function WikiEditor({ page, initialTitle = '', onClose }: WikiEditorProps
             </button>
           ))}
         </div>
-        {audience === 'gm' && <p className="hint">Only you can see it. Links to it show as plain text for players.</p>}
+        {audience === 'gm' && <p className="hint">Only you can see it. For players, links to it read as plain text.</p>}
         {audience === 'all' && <p className="hint">Every player can read it (not the secret notes), including players who join later.</p>}
         {audience === 'players' &&
           (players.length ? (
