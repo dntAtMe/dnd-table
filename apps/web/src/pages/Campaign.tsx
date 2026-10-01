@@ -1,5 +1,5 @@
 import type { CameraRect, User } from '@dnd/protocol';
-import { gridGeometry, pointToCell, type TerrainId } from '@dnd/rules';
+import { gridGeometry, pointToCell, type EntryRef, type TerrainId } from '@dnd/rules';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router';
 import { DiceTray } from '../components/DiceTray';
@@ -26,6 +26,8 @@ import { SoundboardPanel } from '../components/audio/SoundboardPanel';
 import { useAmbientAudio, useAudioPrefs } from '../components/audio/useAmbientAudio';
 import { HandoutsPanel, ShowcaseStatus } from '../components/handouts/HandoutsPanel';
 import { ShowcaseOverlay, useHandoutNotice, usePlayerShowcase } from '../components/handouts/Showcase';
+import { CompendiumView } from '../components/knowledge/CompendiumView';
+import { useEntryHistory } from '../components/knowledge/history';
 import { PopupLayer } from '../components/knowledge/PopupLayer';
 import { useGameSocket, type SocketStatus } from '../lib/useGameSocket';
 
@@ -53,8 +55,8 @@ function Section({ title, children, className = '', tab }: SectionProps) {
   );
 }
 
-/** 'combat' and 'handouts' share the second phone tab with the sheet (see MobileSwitch). */
-type Tab = 'map' | 'sheet' | 'combat' | 'handouts' | 'dice' | 'log' | 'party';
+/** 'combat', 'handouts' and 'compendium' share the second phone tab with the sheet (see MobileSwitch). */
+type Tab = 'map' | 'sheet' | 'combat' | 'handouts' | 'compendium' | 'dice' | 'log' | 'party';
 
 const PLAYER_TOOLS: ToolOption[] = [
   { tool: 'move', label: 'Move' },
@@ -70,9 +72,18 @@ const EDIT_TOOLS: ToolOption[] = [
   { tool: 'erase', label: 'Erase' },
 ];
 
-const TAB_LABELS: Record<Tab, string> = { map: 'Map', sheet: 'Sheet', combat: 'Combat', handouts: 'Handouts', dice: 'Dice', log: 'Log', party: 'Party' };
+const TAB_LABELS: Record<Tab, string> = {
+  map: 'Map',
+  sheet: 'Sheet',
+  combat: 'Combat',
+  handouts: 'Handouts',
+  compendium: 'Compendium',
+  dice: 'Dice',
+  log: 'Log',
+  party: 'Party',
+};
 /** Center views other than the map. */
-const CENTER_VIEWS = new Set<Tab>(['sheet', 'combat', 'handouts']);
+const CENTER_VIEWS = new Set<Tab>(['sheet', 'combat', 'handouts', 'compendium']);
 
 function MapEmpty({ isGm }: { isGm: boolean }) {
   return (
@@ -90,6 +101,14 @@ export function Campaign({ user }: { user: User }) {
   const { id = '' } = useParams();
   const { state, send } = useGameSocket(`campaign=${encodeURIComponent(id)}`);
   const [tab, setTab] = useState<Tab>('map');
+  const compendiumHistory = useEntryHistory();
+  const showInCompendium = useCallback(
+    (ref: EntryRef) => {
+      setTab('compendium');
+      compendiumHistory.go(ref);
+    },
+    [compendiumHistory],
+  );
   const [toast, setToast] = useState<string>();
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
   const [tool, setTool] = useState<MapTool>('move');
@@ -340,6 +359,9 @@ export function Campaign({ user }: { user: User }) {
             Handouts
             {unreadHandouts > 0 && <span className="center-switch__unread" aria-label={`${unreadHandouts} unread`}>{unreadHandouts}</span>}
           </button>
+          <button type="button" role="tab" aria-selected={tab === 'compendium'} className={tab === 'compendium' ? 'is-active' : ''} onClick={() => setTab('compendium')}>
+            Compendium
+          </button>
         </div>
         <main className="campaign__map" data-tab="map">
           {scene ? (
@@ -473,6 +495,10 @@ export function Campaign({ user }: { user: User }) {
             send={send}
           />
         </section>
+        <section className="campaign__compendium" data-tab="compendium">
+          <MobileSwitch tab={tab} setTab={setTab} live={Boolean(combat)} unread={unreadHandouts} />
+          <CompendiumView history={compendiumHistory} />
+        </section>
         </div>
 
         <div className="campaign__right">
@@ -505,7 +531,7 @@ export function Campaign({ user }: { user: User }) {
 
       {ambient.blocked && <AudioUnlockPrompt onUnlock={ambient.unlock} />}
 
-      <PopupLayer />
+      <PopupLayer onShow={showInCompendium} />
 
       {playerShowcase && <ShowcaseOverlay showcase={playerShowcase} onClose={closePlayerShowcase} />}
 
@@ -540,10 +566,10 @@ export function Campaign({ user }: { user: User }) {
   );
 }
 
-/** Phones: the sheet, the combat tracker and handouts share a tab, with this switch at the top. */
+/** Phones: the sheet, the combat tracker, handouts and the compendium share a tab, with this switch at the top. */
 function MobileSwitch({ tab, setTab, live, unread }: { tab: Tab; setTab: (t: Tab) => void; live: boolean; unread: number }) {
   return (
-    <div className="segmented segmented--full mobile-switch" role="tablist" aria-label="Sheet, combat or handouts">
+    <div className="segmented segmented--full mobile-switch" role="tablist" aria-label="Sheet, combat, handouts or compendium">
       <button type="button" role="tab" aria-selected={tab === 'sheet'} className={tab === 'sheet' ? 'is-active' : ''} onClick={() => setTab('sheet')}>
         Sheet
       </button>
@@ -555,7 +581,27 @@ function MobileSwitch({ tab, setTab, live, unread }: { tab: Tab; setTab: (t: Tab
         Handouts
         {unread > 0 && <span className="center-switch__unread" aria-label={`${unread} unread`}>{unread}</span>}
       </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={tab === 'compendium'}
+        aria-label="Compendium"
+        title="Compendium"
+        className={`mobile-switch__icon${tab === 'compendium' ? ' is-active' : ''}`}
+        onClick={() => setTab('compendium')}
+      >
+        <BookIcon />
+      </button>
     </div>
+  );
+}
+
+function BookIcon() {
+  return (
+    <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true">
+      <path d="M10 5.5C8.2 4 5.6 3.6 2.5 4v11.5c3.1-.4 5.7 0 7.5 1.5 1.8-1.5 4.4-1.9 7.5-1.5V4c-3.1-.4-5.7 0-7.5 1.5Z" />
+      <path d="M10 5.5V17" />
+    </svg>
   );
 }
 
