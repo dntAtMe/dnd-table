@@ -1,10 +1,11 @@
-// Map editing on the server: walls, doors, terrain and resizing blank grids. The hub looks up
-// the scene and stores what these functions return.
+// Map editing on the server: walls, doors, terrain, resizing blank grids, and the movement rules
+// that come with them. The hub looks up the scene and stores what these functions return.
 import type { ClientRole, MapMessage, Token } from '@dnd/protocol';
 import {
   GRID_LIMITS,
   edgeCode,
   gridGeometry,
+  moveBlock,
   resizeFog,
   terrainCode,
   type Edge,
@@ -127,4 +128,15 @@ export function remapForGrid(scene: SceneRecord, before: GridGeometry, after: Gr
   return mapData(scene)
     .resized({ top: 0, left: 0, right: after.cols - before.cols, bottom: after.rows - before.rows })
     .encode();
+}
+
+/**
+ * Players can't walk through walls, closed doors or solid rock (the GM can put tokens anywhere).
+ * Large tokens move their whole footprint, see moveBlock.
+ */
+export function checkPlayerMove(scene: SceneRecord, token: Token, to: { col: number; row: number }): void {
+  if (!scene.map) return;
+  const block = moveBlock(mapData(scene), token, to, token.size);
+  if (block === 'wall') throw new GameError('A wall or closed door is in the way');
+  if (block === 'terrain') throw new GameError("You can't move through solid rock");
 }

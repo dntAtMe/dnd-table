@@ -28,7 +28,7 @@ import {
   type User,
 } from '@dnd/protocol';
 import type { WebSocket } from 'ws';
-import { applyMapEdit, remapForGrid } from './mapEditor';
+import { applyMapEdit, checkPlayerMove, remapForGrid } from './mapEditor';
 import { GameError, applyGridPatch, clampToGrid, fogMask, sceneView, summary } from './scenes';
 import type { Display, SceneRecord, Store } from './store';
 
@@ -420,6 +420,7 @@ export class Hub {
     }
     const pos = clampToGrid(scene, msg.col, msg.row, token.size);
     if (pos.col === token.col && pos.row === token.row) return;
+    if (conn.role !== 'gm') checkPlayerMove(scene, token, pos);
     this.store.updateToken({ ...token, ...pos });
     this.sceneChanged(conn.campaignId, scene.id);
   }

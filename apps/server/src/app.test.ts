@@ -549,6 +549,35 @@ describe('map editor', () => {
     expect(decode(closed.scene).feature(right)).toEqual({ kind: 'door', state: 'closed', secret: false });
   });
 
+  it("blocks players' moves through walls, closed doors and rock, but not the GM's", async () => {
+    const { gmSock, playerSock, sceneId, ana } = await mapTable();
+    const door: Edge = { side: 'top', col: 1, row: 3 };
+    gmSock.send({ type: 'map:walls', sceneId, edges: [{ side: 'left', col: 3, row: 1 }], wall: true });
+    gmSock.send({ type: 'map:door', sceneId, edge: door, state: 'closed', secret: false });
+    gmSock.send({ type: 'map:terrain', sceneId, cells: [5 * 10 + 1], terrain: 'rock' });
+    await playerSock.until('scene', (m) => decode(m.scene).terrainAt(1, 5) !== 0);
+
+    playerSock.send({ type: 'token:move', tokenId: ana.id, col: 4, row: 1 });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'A wall or closed door is in the way' });
+    playerSock.send({ type: 'token:move', tokenId: ana.id, col: 1, row: 4 });
+    expect(await playerSock.until('error')).toMatchObject({ message: 'A wall or closed door is in the way' });
+    playerSock.send({ type: 'token:move', tokenId: ana.id, col: 1, row: 2 });
+    await gmSock.until('scene', (m) => tokenAt(m.scene, ana.id, 1, 2));
+
+    gmSock.send({ type: 'door:toggle', sceneId, edge: door });
+    await playerSock.until('scene', (m) => !decode(m.scene).blocks(door));
+    playerSock.send({ type: 'token:move', tokenId: ana.id, col: 1, row: 4 });
+    await gmSock.until('scene', (m) => tokenAt(m.scene, ana.id, 1, 4));
+    playerSock.send({ type: 'token:move', tokenId: ana.id, col: 1, row: 6 });
+    expect(await playerSock.until('error')).toMatchObject({ message: "You can't move through solid rock" });
+
+    // The GM can put tokens anywhere.
+    gmSock.send({ type: 'token:move', tokenId: ana.id, col: 1, row: 5 });
+    await gmSock.until('scene', (m) => tokenAt(m.scene, ana.id, 1, 5));
+    gmSock.send({ type: 'token:move', tokenId: ana.id, col: 5, row: 1 });
+    await gmSock.until('scene', (m) => tokenAt(m.scene, ana.id, 5, 1));
+  });
+
   it('grows and shrinks blank maps on any side, keeping tokens, fog and walls in place', async () => {
     const { gm, campaignId, gmSock, playerSock, sceneId, ana } = await mapTable();
     gmSock.send({ type: 'map:walls', sceneId, edges: [{ side: 'top', col: 1, row: 1 }, { side: 'left', col: 10, row: 7 }], wall: true });
