@@ -224,7 +224,8 @@ const KIND_RANK = Object.fromEntries(ENTRY_KINDS.map((k, i) => [k, i])) as Recor
 
 // ---------- linking ----------
 
-export type TextSegment = { text: string; ref?: EntryRef; broken?: boolean };
+/** `target`: for broken links, what the link points at ([[Iarno|the wizard]] → "Iarno"). */
+export type TextSegment = { text: string; ref?: EntryRef; broken?: boolean; target?: string };
 
 export interface LinkOptions {
   /** Don't link the entry this text describes. */
@@ -413,7 +414,7 @@ export class Compendium {
       const entry = this.resolve(m[1]!);
       const label = (m[2] ?? (entry && parseRefKey(m[1]!.trim()) ? entry.name : m[1]!)).trim();
       if (entry) seen.add(refKey(entry));
-      out.push(entry ? { text: label, ref: { kind: entry.kind, id: entry.id } } : { text: label, broken: true });
+      out.push(entry ? { text: label, ref: { kind: entry.kind, id: entry.id } } : { text: label, broken: true, target: m[1]!.trim() });
       last = m.index! + m[0].length;
     }
     if (last < text.length) out.push(...this.autoLink(text.slice(last), opts, seen));

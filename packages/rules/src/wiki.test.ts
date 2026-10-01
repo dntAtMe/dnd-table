@@ -42,11 +42,13 @@ describe('linkGraph / backlinks', () => {
 });
 
 describe('brokenLinks', () => {
-  it('lists explicit links to missing pages once each', () => {
-    expect(brokenLinks(compendium, '[[Sildar Hallwinter]] met [[Gundren]] and [[Sildar Hallwinter]] and [[Iarno|the wizard]].')).toEqual([
+  it('lists the targets of explicit links to missing pages once each', () => {
+    expect(brokenLinks(compendium, '[[Sildar Hallwinter]] met [[Gundren]] and [[sildar hallwinter]] and [[Iarno|the wizard]].')).toEqual([
       'Sildar Hallwinter',
-      'the wizard',
+      'Iarno',
     ]);
+    // The segments keep what a broken link points at, for "create this page".
+    expect(compendium.linkify('Ask [[ Iarno |the wizard]].')[1]).toEqual({ text: 'the wizard', broken: true, target: 'Iarno' });
   });
 });
 

@@ -36,11 +36,14 @@ export function backlinks(compendium: Compendium, target: EntryRef, sources: rea
   return linkGraph(compendium, sources).get(refKey(target)) ?? [];
 }
 
-/** Names of broken explicit links in a text ([[Somebody]] with no entry of that name), deduplicated. */
+/** Targets of broken explicit links in a text ([[Somebody]] with no entry of that name), deduplicated ignoring case. */
 export function brokenLinks(compendium: Compendium, text: string): string[] {
-  const out = new Set<string>();
-  for (const seg of compendium.linkify(text)) if (seg.broken) out.add(seg.text);
-  return [...out];
+  const out = new Map<string, string>();
+  for (const seg of compendium.linkify(text)) {
+    const target = seg.broken ? (seg.target ?? seg.text) : undefined;
+    if (target && !out.has(target.toLowerCase())) out.set(target.toLowerCase(), target);
+  }
+  return [...out.values()];
 }
 
 // ---------- [[ autocomplete ----------
