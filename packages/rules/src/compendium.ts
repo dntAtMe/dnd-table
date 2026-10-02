@@ -25,6 +25,7 @@ export const ENTRY_KINDS = [
   'condition',
   'school',
   'spell',
+  'rule',
   'magic-item',
   'monster',
   'feat',
@@ -73,6 +74,7 @@ export const KIND_LABELS: Record<EntryKind, string> = {
   school: 'School of magic',
   alignment: 'Alignment',
   language: 'Language',
+  rule: 'Rule',
 };
 
 export interface EntryRef {
@@ -144,6 +146,9 @@ export function coreEntries(): IndexEntry[] {
   for (const [id, d] of Object.entries(RULES_TEXT.schools)) out.push({ kind: 'school', id, name: d.name, summary: `School of magic · ${d.description}` });
   for (const [id, d] of Object.entries(RULES_TEXT.alignments)) out.push({ kind: 'alignment', id, name: d.name, aliases: [d.abbreviation], summary: firstSentence(d.description) });
   for (const [id, d] of Object.entries(RULES_TEXT.languages)) out.push({ kind: 'language', id, name: d.name, summary: `${d.rare ? 'Rare' : 'Standard'} language${d.note ? ` · ${d.note}` : ''}` });
+  for (const g of RULES_TEXT.glossary) {
+    out.push({ kind: 'rule', id: g.id, name: g.name, aliases: RULE_ALIASES[g.id], summary: `${g.tag ? `${g.tag} · ` : ''}${firstSentence(g.description)}`, keywords: g.tag });
+  }
   return out;
 }
 
@@ -255,10 +260,69 @@ const AUTO_KINDS = new Set<EntryKind>([
   'skill',
   'damage-type',
   'school',
+  'rule',
 ]);
 
 /** Kinds whose names are often used in the plural ("Goblins", "Daggers"). */
-const PLURAL_KINDS = new Set<EntryKind>(['monster', 'weapon', 'armor', 'gear', 'magic-item']);
+const PLURAL_KINDS = new Set<EntryKind>(['monster', 'weapon', 'armor', 'gear', 'magic-item', 'rule']);
+
+/** Other names rules text uses for glossary entries. */
+const RULE_ALIASES: Record<string, string[]> = {
+  'opportunity-attacks': ['Opportunity Attack'],
+  'hit-point-dice': ['Hit Point Die'],
+  'ability-score-and-modifier': ['Ability Score', 'Ability Modifier'],
+};
+
+/** Glossary entry tags by id, for linking rules. */
+const RULE_TAGS = new Map(RULES_TEXT.glossary.map((g) => [g.id, g.tag]));
+
+/**
+ * Glossary terms by tag that are linked only in context: "take the Dash action", "a 20-foot-radius
+ * Sphere", "is Hostile". Without it, sentences starting "Attack…" or "Line…" would link.
+ */
+const RULE_CONTEXT: Record<string, { after?: RegExp; before?: RegExp }> = {
+  Action: { after: /^\s+actions?\b/i },
+  'Area of Effect': { before: /\bfoot(?:-[a-z]+)*\s+$/i },
+  Attitude: { before: /\b(?:is|are|be|becomes?|remains?|turns?|starts?)\s+$/i },
+};
+
+/**
+ * One-word glossary terms that are safe to link anywhere: the 2024 rules capitalise them as game
+ * terms ("has Advantage", "in Darkness"). Other one-word entries (Creature, Speed, Target, Spell…)
+ * are everyday words that start sentences, so they're only linked with [[ ]]. Terms of more than
+ * one word ("Difficult Terrain", "Hit Points") always link.
+ */
+const RULE_WORDS = new Set([
+  'Advantage',
+  'Disadvantage',
+  'Attunement',
+  'Blindsight',
+  'Bloodied',
+  'Burning',
+  'Concentration',
+  'Cover',
+  'Darkness',
+  'Darkvision',
+  'Dehydration',
+  'Expertise',
+  'Grappling',
+  'Immunity',
+  'Initiative',
+  'Malnutrition',
+  'Reaction',
+  'Resistance',
+  'Ritual',
+  'Suffocation',
+  'Telepathy',
+  'Tremorsense',
+  'Truesight',
+  'Vulnerability',
+]);
+
+function ruleAutoLinks(e: IndexEntry, name: string): boolean {
+  const tag = RULE_TAGS.get(e.id);
+  return name.includes(' ') || RULE_WORDS.has(name) || (tag !== undefined && tag in RULE_CONTEXT);
+}
 
 /** Kinds whose names are everyday words: link only next to a telling word. */
 const KIND_CONTEXT: Partial<Record<EntryKind, { after?: RegExp; before?: RegExp }>> = {
@@ -437,7 +501,9 @@ export class Compendium {
       const before = text.slice(Math.max(0, start - 20), start);
       const after = text.slice(end, end + 20);
       const entry = candidates.find((e) => {
-        const ctx = e.kind === 'spell' && CONTEXT_ONLY_SPELLS.has(e.name) ? SPELL_CONTEXT : KIND_CONTEXT[e.kind];
+        const ruleTag = e.kind === 'rule' ? RULE_TAGS.get(e.id) : undefined;
+        const ctx =
+          e.kind === 'spell' && CONTEXT_ONLY_SPELLS.has(e.name) ? SPELL_CONTEXT : ruleTag !== undefined ? RULE_CONTEXT[ruleTag] : KIND_CONTEXT[e.kind];
         if (!ctx) return true;
         return Boolean((ctx.after && ctx.after.test(after)) || (ctx.before && ctx.before.test(before)));
       });
@@ -460,6 +526,7 @@ export class Compendium {
       // Aliases too, so a campaign page for "Gundren Rockseeker" also links plain "Gundren".
       for (const name of [e.name, ...(e.aliases ?? [])]) {
         if (NEVER_AUTO.has(name) || name.length < 3) continue;
+        if (e.kind === 'rule' && !ruleAutoLinks(e, name)) continue;
         const list = byName.get(name);
         if (list) list.push(e);
         else byName.set(name, [e]);

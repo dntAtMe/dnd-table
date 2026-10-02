@@ -66,7 +66,12 @@ describe('linkify', () => {
   });
 
   it('only links ambiguous spell names in context', () => {
-    expect(links(full.linkify('In Bright Light you have Resistance to Fire damage.'))).toEqual(['Fire→damage-type:fire']);
+    // "Bright Light" and "Resistance" here are the rules terms, not the Light and Resistance spells.
+    expect(links(full.linkify('In Bright Light you have Resistance to Fire damage.'))).toEqual([
+      'Bright Light→rule:bright-light',
+      'Resistance→rule:resistance',
+      'Fire→damage-type:fire',
+    ]);
     expect(links(full.linkify('You know the Light cantrip and can cast Shield.'))).toEqual(['Light→spell:light', 'Shield→spell:shield']);
   });
 
@@ -74,6 +79,7 @@ describe('linkify', () => {
     expect(links(full.linkify('A Divination spell reveals it. You cast Divination. Armor of any kind; you have Darkvision.'))).toEqual([
       'Divination→school:divination',
       'Divination→spell:divination',
+      'Darkvision→rule:darkvision',
     ]);
   });
 
@@ -97,6 +103,33 @@ describe('linkify', () => {
       'Gundren→page:p1',
     ]);
     expect(withPages.search('gundr')[0]?.kind).toBe('page');
+  });
+});
+
+describe('rules glossary', () => {
+  it('has the SRD 5.2.1 glossary, without the conditions it repeats', () => {
+    expect(full.get({ kind: 'rule', id: 'opportunity-attacks' })?.summary).toMatch(/^You can make an Opportunity Attack/);
+    expect(full.get({ kind: 'rule', id: 'dash' })?.summary).toMatch(/^Action · /);
+    expect(full.get({ kind: 'rule', id: 'grappled' })).toBeUndefined();
+    expect(full.entries.filter((e) => e.kind === 'rule').length).toBe(140);
+  });
+
+  it('links game terms, and everyday words only in context', () => {
+    const text = 'You have Advantage on the roll and can take the Dash action. Opportunity Attacks provoke. Attack rolls hit.';
+    expect(links(full.linkify(text))).toEqual(['Advantage→rule:advantage', 'Dash→rule:dash', 'Opportunity Attacks→rule:opportunity-attacks']);
+    expect(links(full.linkify('Each creature in a 20-foot-radius Sphere takes damage. Sphere of light.'))).toEqual(['Sphere→rule:sphere']);
+    expect(links(full.linkify('It makes an Opportunity Attack against a Hostile creature that is Hostile.'))).toEqual([
+      'Opportunity Attack→rule:opportunity-attacks',
+      'Hostile→rule:hostile',
+    ]);
+    expect(links(full.linkify('Speed matters. Creature types vary. Target one creature.'))).toEqual([]);
+  });
+
+  it('keeps spells and rules of the same name apart', () => {
+    expect(links(full.linkify('Magical Darkness spreads. You cast Darkness.', { firstOnly: false }))).toEqual([
+      'Darkness→rule:darkness',
+      'Darkness→spell:darkness',
+    ]);
   });
 });
 
