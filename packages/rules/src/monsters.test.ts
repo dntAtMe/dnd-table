@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { monsterCrText, monsterSensesText, monsterSpeedText } from './monsters';
+import { monsterCrText, monsterSenses, monsterSensesText, monsterSpeedText } from './monsters';
+import { MONSTERS } from './srd/monsters';
 import { MONSTERS_BY_ID } from './srd/monsters';
 
 describe('stat block lines', () => {
@@ -20,5 +21,22 @@ describe('stat block lines', () => {
   it('formats challenge rating, XP and proficiency bonus', () => {
     expect(monsterCrText(goblin)).toBe('1/4 (XP 50; PB +2)');
     expect(monsterCrText(dragon)).toBe('17 (XP 18,000, or 20,000 in lair; PB +6)');
+  });
+});
+
+describe('monster senses for token vision', () => {
+  it('reads darkvision, blindsight and truesight in feet, ignoring notes and tremorsense', () => {
+    expect(monsterSenses(MONSTERS_BY_ID['goblin-warrior']!)).toEqual({ darkvision: 60 });
+    expect(monsterSenses(MONSTERS_BY_ID['adult-red-dragon']!)).toEqual({ blindsight: 60, darkvision: 120 });
+    expect(monsterSenses({ senses: { blindsight: '30 ft. (blind beyond this radius)', tremorsense: '60 ft.' } })).toEqual({ blindsight: 30 });
+    expect(monsterSenses({ senses: {} })).toEqual({});
+  });
+
+  it('understands every sense in the bestiary', () => {
+    for (const m of MONSTERS) {
+      for (const sense of ['darkvision', 'blindsight', 'truesight'] as const) {
+        if (m.senses[sense]) expect(monsterSenses(m)[sense], `${m.name} ${sense}`).toBeGreaterThan(0);
+      }
+    }
   });
 });

@@ -1,6 +1,7 @@
 // Stat-block maths for SRD monsters. The monster data itself is in @dnd/rules/monsters (loaded lazily).
 import { abilityMod } from './character';
 import { SKILLS, type Ability, type MonsterDamage, type MonsterDef, type MonsterSize, type Skill } from './srd';
+import type { TokenSenses } from './vision';
 
 /** Saving throw bonus: the listed bonus for proficient saves, otherwise the ability modifier. */
 export function monsterSave(m: Pick<MonsterDef, 'saves' | 'scores'>, ability: Ability): number {
@@ -61,6 +62,19 @@ export function monsterSpeedText(m: Pick<MonsterDef, 'speed' | 'hover'>): string
 /** "Darkvision 60 ft., Passive Perception 9" */
 export function monsterSensesText(m: Pick<MonsterDef, 'senses' | 'passivePerception'>): string {
   return [...Object.entries(m.senses).map(([k, v]) => `${capWord(k)} ${v}`), `Passive Perception ${m.passivePerception}`].join(', ');
+}
+
+/**
+ * A monster's darkvision, blindsight and truesight in feet, for its token's vision ("60 ft.",
+ * "30 ft. (blind beyond this radius)"). Tremorsense doesn't see, so it's left out.
+ */
+export function monsterSenses(m: Pick<MonsterDef, 'senses'>): TokenSenses {
+  const out: TokenSenses = {};
+  for (const sense of ['darkvision', 'blindsight', 'truesight'] as const) {
+    const feet = Number(/^(\d+)/.exec(m.senses[sense] ?? '')?.[1]);
+    if (feet > 0) out[sense] = feet;
+  }
+  return out;
 }
 
 /** "1/4 (XP 50; PB +2)", "17 (XP 18,000, or 20,000 in lair; PB +6)" */
