@@ -594,17 +594,25 @@ export function Campaign({ user }: { user: User }) {
       </div>
 
       <nav className="tabbar" aria-label="Sections">
-        {(['map', 'sheet', 'dice', 'log', 'party'] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            className={tab === t || (t === 'sheet' && CENTER_VIEWS.has(tab)) ? 'is-active' : ''}
-            onClick={() => setTab(t === 'sheet' && combat && !CENTER_VIEWS.has(tab) ? 'combat' : t)}
-          >
-            {t === 'party' && isGm ? 'Manage' : t === 'sheet' && combat ? 'Combat' : TAB_LABELS[t]}
-            {t === 'sheet' && (unreadHandouts > 0 || unreadWiki > 0) && <span className="tabbar__dot" aria-label="unread handouts or wiki pages" />}
-          </button>
-        ))}
+        {(['map', 'sheet', 'dice', 'log', 'party'] as const).map((t) => {
+          // The second tab holds the sheet, combat, handouts and compendium: it's named after the one
+          // showing, or leads to the fight while one is running.
+          const inCenter = CENTER_VIEWS.has(tab);
+          const center: Tab = inCenter ? (tab === 'wiki' ? 'compendium' : tab) : combat ? 'combat' : 'sheet';
+          const label = t === 'party' && isGm ? 'Manage' : t === 'sheet' ? TAB_LABELS[center] : TAB_LABELS[t];
+          return (
+            <button
+              key={t}
+              type="button"
+              className={tab === t || (t === 'sheet' && inCenter) ? 'is-active' : ''}
+              onClick={() => setTab(t === 'sheet' ? (inCenter ? tab : center) : t)}
+            >
+              {label}
+              {t === 'sheet' && combat && center !== 'combat' && <span className="center-switch__live" aria-label="combat in progress" />}
+              {t === 'sheet' && (unreadHandouts > 0 || unreadWiki > 0) && <span className="tabbar__dot" aria-label="unread handouts or wiki pages" />}
+            </button>
+          );
+        })}
       </nav>
 
       {ambient.blocked && <AudioUnlockPrompt onUnlock={ambient.unlock} />}
