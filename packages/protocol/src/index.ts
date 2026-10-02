@@ -83,6 +83,13 @@ export interface Token {
   ownerUserId: string | null;
   /** Character this token represents, if any. */
   characterId: string | null;
+  /**
+   * Whether players know this creature's name. False shows them `appearance` instead (only the GM
+   * receives these two fields; players get the name they may see in `name`). Missing means known.
+   */
+  nameKnown?: boolean;
+  /** What players see while the name is unknown: "Dwarf smith", "Hooded figure". */
+  appearance?: string;
   /** Light the token carries (torch, lantern, spell…), if any. */
   light?: LightSource;
   /** Darkvision, blindsight and truesight; darkvision defaults to the character's. */
@@ -147,7 +154,22 @@ const TokenFields = z.object({
   size: z.number().int().min(1).max(6),
   hidden: z.boolean(),
   ownerUserId: Id.nullable(),
+  nameKnown: z.boolean(),
+  appearance: z.string().trim().max(40),
 });
+
+/** What players call a creature whose name they don't know and that has no description. */
+export const UNKNOWN_CREATURE = 'Unknown creature';
+
+/**
+ * A token's name as players and table screens see it: the real name once the GM marks it known,
+ * otherwise what the creature looks like. The party (characters and player-controlled tokens) is
+ * always known.
+ */
+export function tokenPublicName(t: Pick<Token, 'name' | 'characterId' | 'ownerUserId' | 'nameKnown' | 'appearance'>): string {
+  if (t.nameKnown !== false || t.characterId || t.ownerUserId) return t.name;
+  return t.appearance?.trim() || UNKNOWN_CREATURE;
+}
 
 // ---------- characters ----------
 
@@ -333,7 +355,7 @@ export const ClientMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('fog:fill'), sceneId: Id, reveal: z.boolean() }),
 
   // Tokens (GM; players may move their own)
-  TokenFields.partial({ size: true, hidden: true, ownerUserId: true }).extend({
+  TokenFields.partial({ size: true, hidden: true, ownerUserId: true, nameKnown: true, appearance: true }).extend({
     type: z.literal('token:create'),
     sceneId: Id,
     col: Cell,

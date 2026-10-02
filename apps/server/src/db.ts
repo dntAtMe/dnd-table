@@ -195,6 +195,11 @@ const MIGRATIONS = [
     PRIMARY KEY (page_id, user_id)
   );
   `,
+  // Secret names: existing tokens stay known, as they were.
+  `
+  ALTER TABLE tokens ADD COLUMN name_known INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE tokens ADD COLUMN appearance TEXT NOT NULL DEFAULT '';
+  `,
 ];
 
 export function openDb(file: string): DB {

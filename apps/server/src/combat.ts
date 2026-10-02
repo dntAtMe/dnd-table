@@ -1,3 +1,4 @@
+import { tokenPublicName } from '@dnd/protocol';
 import type {
   CharacterRecord,
   ClientMessage,
@@ -55,6 +56,8 @@ export interface StoredCombatant {
   hidden: boolean;
   /** Join order, for stable ties. */
   seq: number;
+  /** What players call it, when its token's name is secret (worked out per view, never stored). */
+  publicName?: string;
 }
 
 /** One running encounter per campaign. */
@@ -101,9 +104,13 @@ export function resolveCombatants(encounter: Encounter, characters: Characters, 
   const out: StoredCombatant[] = [];
   for (const c of encounter.combatants) {
     // A hidden token never gives itself away through the tracker.
-    const hidden = c.hidden || Boolean(c.tokenId && tokens.get(c.tokenId)?.hidden);
+    const token = c.tokenId ? tokens.get(c.tokenId) : undefined;
+    const hidden = c.hidden || Boolean(token?.hidden);
     if (c.kind !== 'character') {
-      out.push({ ...c, hidden });
+      // A creature on the map goes by its token's name, so renaming the token renames it here.
+      const name = token?.name ?? c.name;
+      const publicName = token ? tokenPublicName(token) : name;
+      out.push({ ...c, name, hidden, ...(publicName !== name && { publicName }) });
       continue;
     }
     const rec = c.characterId ? characters.get(c.characterId) : undefined;
@@ -140,7 +147,7 @@ export function combatView(encounter: Encounter, resolved: StoredCombatant[], vi
   const combatants = visible.map((c): CombatantView => {
     const view: CombatantView = {
       id: c.id,
-      name: c.name,
+      name: isGm ? c.name : (c.publicName ?? c.name),
       kind: c.kind,
       tokenId: c.tokenId,
       characterId: c.characterId,

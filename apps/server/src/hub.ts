@@ -439,6 +439,8 @@ export class Hub {
       hidden: msg.hidden ?? false,
       ownerUserId: msg.ownerUserId ?? null,
       characterId: null,
+      nameKnown: msg.nameKnown ?? true,
+      appearance: msg.appearance ?? '',
       ...clampToGrid(scene, msg.col, msg.row, size),
     });
     this.sceneChanged(conn.campaignId, scene.id);
@@ -452,6 +454,8 @@ export class Hub {
     const next = { ...token, ...patch };
     this.store.updateToken({ ...next, ...clampToGrid(scene, next.col, next.row, next.size) });
     this.sceneChanged(conn.campaignId, scene.id);
+    // The turn order shows the token's name (or, to players, what it looks like).
+    if (patch.name !== undefined || patch.nameKnown !== undefined || patch.appearance !== undefined) this.combat.changed(conn.campaignId);
   }
 
   private moveToken(conn: Conn, msg: Msg<'token:move'>): void {

@@ -672,6 +672,8 @@ export class Store {
       hidden: Boolean(row.hidden),
       ownerUserId: (row.owner_user_id as string | null) ?? null,
       characterId: (row.character_id as string | null) ?? null,
+      nameKnown: Boolean(row.name_known),
+      appearance: (row.appearance as string) ?? '',
     };
   }
 
@@ -689,8 +691,8 @@ export class Store {
     const id = randomUUID();
     this.db
       .prepare(
-        `INSERT INTO tokens (id, scene_id, name, color, col, row, size, hidden, owner_user_id, character_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO tokens (id, scene_id, name, color, col, row, size, hidden, owner_user_id, character_id, name_known, appearance)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -703,17 +705,30 @@ export class Store {
         token.hidden ? 1 : 0,
         token.ownerUserId,
         token.characterId,
+        token.nameKnown === false ? 0 : 1,
+        token.appearance ?? '',
       );
-    return { ...token, id };
+    return { ...token, id, nameKnown: token.nameKnown !== false, appearance: token.appearance ?? '' };
   }
 
   updateToken(token: Token): void {
     this.db
       .prepare(
-        `UPDATE tokens SET name = ?, color = ?, col = ?, row = ?, size = ?, hidden = ?, owner_user_id = ?
+        `UPDATE tokens SET name = ?, color = ?, col = ?, row = ?, size = ?, hidden = ?, owner_user_id = ?, name_known = ?, appearance = ?
          WHERE id = ?`,
       )
-      .run(token.name, token.color, token.col, token.row, token.size, token.hidden ? 1 : 0, token.ownerUserId, token.id);
+      .run(
+        token.name,
+        token.color,
+        token.col,
+        token.row,
+        token.size,
+        token.hidden ? 1 : 0,
+        token.ownerUserId,
+        token.nameKnown === false ? 0 : 1,
+        token.appearance ?? '',
+        token.id,
+      );
   }
 
   deleteToken(id: string): void {
@@ -945,7 +960,7 @@ const SCENE_SELECT = `
   FROM scenes s LEFT JOIN files f ON f.id = s.file_id`;
 
 const TOKEN_SELECT = `
-  SELECT id, scene_id, name, color, col, row, size, hidden, owner_user_id, character_id FROM tokens`;
+  SELECT id, scene_id, name, color, col, row, size, hidden, owner_user_id, character_id, name_known, appearance FROM tokens`;
 
 const TEMPLATE_SELECT = `SELECT id, scene_id, token_id, owner_user_id, data FROM templates`;
 

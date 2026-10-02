@@ -544,6 +544,34 @@ describe('map editor', () => {
     }
   });
 
+  it("keeps unknown creatures' names from players until the GM reveals them", async () => {
+    const { gmSock, playerSock, sceneId, ana } = await mapTable();
+    gmSock.send({ type: 'token:create', sceneId, name: 'Brann Coalhand', color: '#c0392b', col: 3, row: 1, nameKnown: false, appearance: 'Dwarf smith' });
+    gmSock.send({ type: 'token:create', sceneId, name: 'The Mire Mother', color: '#27ae60', col: 5, row: 1, nameKnown: false });
+    gmSock.send({ type: 'token:create', sceneId, name: 'Goblin Warrior 1', color: '#c0392b', col: 7, row: 1 });
+    const gmScene = (await gmSock.until('scene', (m) => m.scene?.tokens.length === 4)).scene!;
+    expect(gmScene.tokens.find((t) => t.name === 'Brann Coalhand')).toMatchObject({ nameKnown: false, appearance: 'Dwarf smith' });
+
+    const seen = (await playerSock.until('scene', (m) => m.scene?.tokens.length === 4)).scene!;
+    expect(seen.tokens.map((t) => t.name)).toEqual(['Ana', 'Dwarf smith', 'Unknown creature', 'Goblin Warrior 1']);
+    // Nothing about the secret reaches the player's device.
+    expect(JSON.stringify(seen)).not.toMatch(/Brann|Mire Mother|nameKnown|appearance/);
+    expect(seen.tokens.find((t) => t.id === ana.id)!.name).toBe('Ana');
+
+    // In the turn order too.
+    const brann = gmScene.tokens.find((t) => t.name === 'Brann Coalhand')!;
+    gmSock.send({ type: 'combat:start' });
+    gmSock.send({ type: 'combat:add', source: { kind: 'token', tokenId: brann.id } });
+    expect((await gmSock.until('combat', (m) => m.combat?.combatants.length === 1)).combat!.combatants[0]!.name).toBe('Brann Coalhand');
+    expect((await playerSock.until('combat', (m) => m.combat?.combatants.length === 1)).combat!.combatants[0]!.name).toBe('Dwarf smith');
+
+    // Revealed: everyone sees the name.
+    gmSock.send({ type: 'token:update', tokenId: brann.id, nameKnown: true });
+    const revealed = await playerSock.until('scene', (m) => m.scene!.tokens.some((t) => t.name === 'Brann Coalhand'));
+    expect(revealed.scene!.tokens.map((t) => t.name)).toContain('Brann Coalhand');
+    expect((await playerSock.until('combat', (m) => m.combat!.combatants[0]!.name === 'Brann Coalhand')).combat!.combatants[0]!.name).toBe('Brann Coalhand');
+  });
+
   it('shows players and table screens closed secret doors as walls, and nothing behind the fog', async () => {
     const { gm, campaignId, gmSock, playerSock, sceneId } = await mapTable();
     const secret: Edge = { side: 'left', col: 3, row: 2 };

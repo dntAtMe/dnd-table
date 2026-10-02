@@ -1,4 +1,4 @@
-import type { ClientRole, GridPatch, MapTemplate, SceneSummary, SceneView, Token } from '@dnd/protocol';
+import { tokenPublicName, type ClientRole, type GridPatch, type MapTemplate, type SceneSummary, type SceneView, type Token } from '@dnd/protocol';
 import { DEFAULT_GRID, DEFAULT_SCENE_VISION, FogMask, GRID_LIMITS, MapData, gridGeometry, type Grid, type SceneVision, type Sight } from '@dnd/rules';
 import type { z } from 'zod';
 import type { SceneRecord } from './store';
@@ -52,7 +52,10 @@ export function sceneView(
 ): SceneView {
   const fog = scene.fogEnabled ? fogMask(scene) : undefined;
   if (fog && sight) for (let i = 0; i < fog.bits.length; i++) fog.bits[i]! |= sight.visible.bits[i] ?? 0;
-  const visible = tokens.filter((t) => tokenVisible(t, viewer, scene, fog, sight?.visible));
+  // Players and table screens get the names they may know, and nothing about secret ones.
+  const visible = tokens
+    .filter((t) => tokenVisible(t, viewer, scene, fog, sight?.visible))
+    .map((t) => (viewer.role === 'gm' ? t : (({ nameKnown: _, appearance: __, ...rest }) => ({ ...rest, name: tokenPublicName(t) }))(t)));
   return {
     ...summary(scene),
     width: scene.width,
