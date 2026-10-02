@@ -44,12 +44,16 @@ const SECTIONS: { key: 'traits' | 'actions' | 'bonusActions' | 'reactions' | 'le
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-/** Rolls for a monster: hidden from players by default, with advantage for the next d20 roll. */
-export function useMonsterRolls(name: string, send: Send) {
+/**
+ * Rolls for a monster: hidden from players by default, with advantage for the next d20 roll. A
+ * public roll is labelled with what players call the creature, so it doesn't give away a secret name.
+ */
+export function useMonsterRolls(name: string, send: Send, publicName = name) {
   const [mode, setMode] = useState<D20Mode>('normal');
   const [visibility, setVisibility] = useState<Visibility>('gm');
 
-  const roll = (label: string, expr: string) => send({ type: 'roll', expr, label: `${name}: ${label}`.slice(0, 80), visibility });
+  const roll = (label: string, expr: string) =>
+    send({ type: 'roll', expr, label: `${visibility === 'gm' ? name : publicName}: ${label}`.slice(0, 80), visibility });
   const rollD20 = (label: string, bonus: number) => {
     roll(mode === 'normal' ? label : `${label} (${mode})`, d20Expression(bonus, mode));
     setMode('normal');

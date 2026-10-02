@@ -1,4 +1,4 @@
-import type { CameraRect, MapMessage, MapTemplate, SceneView, TemplateMessage, Token } from '@dnd/protocol';
+import { UNKNOWN_CREATURE, tokenPublicName, type CameraRect, type MapMessage, type MapTemplate, type SceneView, type TemplateMessage, type Token } from '@dnd/protocol';
 import {
   FogMask,
   MapData,
@@ -182,6 +182,10 @@ function initials(name: string): string {
 
 interface TokenShapeProps {
   token: Token;
+  /** The name drawn under the token (players' view of it in a preview). */
+  label: string;
+  /** GM: players don't know this creature's name. */
+  secretName?: boolean;
   cell: number;
   x: number;
   y: number;
@@ -192,7 +196,7 @@ interface TokenShapeProps {
   decoration?: TokenDecoration;
 }
 
-function TokenShape({ token, cell, x, y, selected, mine, movable, dragging, decoration }: TokenShapeProps) {
+function TokenShape({ token, label, secretName, cell, x, y, selected, mine, movable, dragging, decoration }: TokenShapeProps) {
   const d = token.size * cell;
   const r = d / 2 - Math.max(2, cell * 0.06);
   const classes = ['token'];
@@ -201,15 +205,16 @@ function TokenShape({ token, cell, x, y, selected, mine, movable, dragging, deco
   if (mine) classes.push('token--mine');
   if (movable) classes.push('token--movable');
   if (dragging) classes.push('token--dragging');
+  if (secretName) classes.push('token--secret-name');
   return (
     <g className={classes.join(' ')} transform={`translate(${x} ${y})`} data-token-id={token.id}>
       {(selected || mine) && <circle cx={d / 2} cy={d / 2} r={r + Math.max(3, cell * 0.07)} className="token__ring" />}
       <circle cx={d / 2} cy={d / 2} r={r} fill={token.color} className="token__disc" />
       <text x={d / 2} y={d / 2} className="token__initials" fontSize={r * 0.8}>
-        {initials(token.name)}
+        {label === UNKNOWN_CREATURE ? '?' : initials(label)}
       </text>
       <text x={d / 2} y={d + cell * 0.08} className="token__name" fontSize={Math.max(10, cell * 0.22)}>
-        {token.name}
+        {label}
       </text>
       {decoration && <TokenDecor decoration={decoration} d={d} cell={cell} />}
     </g>
@@ -840,6 +845,8 @@ export function MapView({
                 <TokenShape
                   key={t.id}
                   token={t}
+                  label={previewPlayer ? tokenPublicName(t) : t.name}
+                  secretName={isGm && !previewPlayer && tokenPublicName(t) !== t.name}
                   cell={grid.size}
                   x={dragging ? drag.x : geo.originX + pos.col * grid.size}
                   y={dragging ? drag.y : geo.originY + pos.row * grid.size}

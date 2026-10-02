@@ -1,4 +1,4 @@
-import type { CharacterRecord, ClientMessage, CombatView, CombatantView, Member, Token } from '@dnd/protocol';
+import { tokenPublicName, type CharacterRecord, type ClientMessage, type CombatView, type CombatantView, type Member, type Token } from '@dnd/protocol';
 import {
   ABILITIES,
   ABILITY_NAMES,
@@ -121,6 +121,10 @@ export function TokenActions({ token, combat, characters, members, isGm, userId,
   const active = Boolean(combatant && combat?.activeId === combatant.id);
   const mine = userId !== undefined && (combatant?.ownerUserId === userId || token.ownerUserId === userId);
   const subtitle = character ? characterSubtitle(character) : monster ? `CR ${formatCr(monster.cr)} · ${monster.size} ${monster.type}` : null;
+  /** GM: what players call this creature, when its name is a secret. */
+  const publicName = tokenPublicName(token);
+  const secretName = isGm && publicName !== token.name;
+  const party = Boolean(token.characterId || token.ownerUserId);
 
   return (
     <div ref={rootRef} className="token-actions" style={{ '--token-color': token.color } as CSSProperties} role="dialog" aria-label={`${token.name}: quick actions`}>
@@ -131,6 +135,7 @@ export function TokenActions({ token, combat, characters, members, isGm, userId,
             <MaybeLink entry={monsterId ? { kind: 'monster', id: monsterId } : null}>{token.name}</MaybeLink>
           </strong>
           {subtitle && <span className="token-actions__sub">{subtitle}</span>}
+          {secretName && <span className="token-actions__sub token-actions__secret">Players see: {publicName}</span>}
         </div>
         {token.hidden && <span className="badge badge--hidden">Hidden</span>}
         <button type="button" className="token-actions__close" onClick={onClose} aria-label="Close">
@@ -244,7 +249,9 @@ export function TokenActions({ token, combat, characters, members, isGm, userId,
       <div className="token-actions__body">
         {pane === 'conditions' && conditions && <ConditionPicker active={conditions} onToggle={toggleCondition} />}
         {(pane === 'actions' || pane === 'checks') && character && <CharacterQuick record={character} canEdit={canControl} send={send} pane={pane} />}
-        {(pane === 'actions' || pane === 'checks') && !character && monster && <MonsterQuick monster={monster} name={token.name} send={send} pane={pane} />}
+        {(pane === 'actions' || pane === 'checks') && !character && monster && (
+          <MonsterQuick monster={monster} name={token.name} publicName={publicName} send={send} pane={pane} />
+        )}
         {isGm && monsterId && !monsters && <p className="hint">Loading stat block…</p>}
       </div>
 
@@ -263,6 +270,16 @@ export function TokenActions({ token, combat, characters, members, isGm, userId,
         {isGm && (
           <button type="button" className={`toggle toggle--sm${token.hidden ? ' toggle--on' : ''}`} aria-pressed={token.hidden} onClick={() => send({ type: 'token:update', tokenId: token.id, hidden: !token.hidden })}>
             {token.hidden ? 'Hidden' : 'Hide'}
+          </button>
+        )}
+        {isGm && !party && (
+          <button
+            type="button"
+            className="btn btn--sm btn--ghost"
+            onClick={() => send({ type: 'token:update', tokenId: token.id, nameKnown: secretName })}
+            title={secretName ? `Players will see "${token.name}"` : `Players will see "${tokenPublicName({ ...token, nameKnown: false })}" instead of the name`}
+          >
+            {secretName ? 'Reveal name' : 'Hide name'}
           </button>
         )}
         {isGm && (
@@ -511,8 +528,8 @@ const MONSTER_SECTIONS = [
 ] as const;
 
 /** A monster's actions and checks from its stat block (GM). */
-function MonsterQuick({ monster: m, name, send, pane }: { monster: MonsterDef; name: string; send: Send; pane: 'actions' | 'checks' }) {
-  const r = useMonsterRolls(name, send);
+function MonsterQuick({ monster: m, name, publicName, send, pane }: { monster: MonsterDef; name: string; publicName: string; send: Send; pane: 'actions' | 'checks' }) {
+  const r = useMonsterRolls(name, send, publicName);
   return (
     <>
       <RollMode mode={r.mode} setMode={r.setMode} hidden={r.visibility === 'gm'} toggleHidden={() => r.setVisibility(r.visibility === 'gm' ? 'public' : 'gm')} hiddenLabel="Hidden rolls" />

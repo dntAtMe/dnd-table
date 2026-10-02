@@ -1,4 +1,4 @@
-import type { ClientMessage, MapTemplate, SceneView } from '@dnd/protocol';
+import { tokenPublicName, type ClientMessage, type MapTemplate, type SceneView } from '@dnd/protocol';
 import { AREA_SHAPES, AREA_SHAPE_LABELS, AREA_SIZE_LABELS, gridGeometry, parseSpellArea, type SpellArea } from '@dnd/rules';
 import { useEffect, useMemo, useState } from 'react';
 import { useKnowledge } from '../../lib/knowledge';
@@ -199,9 +199,10 @@ export function TemplateCard({ template: t, scene, isGm, canEdit, send, onClose 
     send({ type: 'template:update', templateId: t.id, ...patch });
   const names = caught.map((c) => c.name).join(', ');
   const postCaught = () => {
-    // Hidden areas or creatures stay between the GM and themselves.
+    // Hidden areas or creatures stay between the GM and themselves; secret names stay secret.
     const secret = t.hidden || caught.some((c) => c.hidden);
-    send({ type: 'chat', text: `${templateTitle(t)}: ${names || 'no one'} caught`, visibility: secret ? 'gm' : 'public' });
+    const list = secret ? names : caught.map((c) => tokenPublicName(c)).join(', ');
+    send({ type: 'chat', text: `${templateTitle(t)}: ${list || 'no one'} caught`, visibility: secret ? 'gm' : 'public' });
   };
 
   return (

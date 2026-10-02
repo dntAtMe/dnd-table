@@ -1,4 +1,4 @@
-import type { CharacterRecord, ClientMessage, Member, SceneView, Token } from '@dnd/protocol';
+import { UNKNOWN_CREATURE, type CharacterRecord, type ClientMessage, type Member, type SceneView, type Token } from '@dnd/protocol';
 import { useEffect, useState } from 'react';
 import { useKnowledge } from '../lib/knowledge';
 import { monsterIdForName } from './combat/monsterForToken';
@@ -44,10 +44,13 @@ export function TokenInspector({ token, members, characters = [], send }: Inspec
   const update = (patch: Partial<Omit<Token, 'id' | 'sceneId' | 'col' | 'row'>>) =>
     send({ type: 'token:update', tokenId: token.id, ...patch });
 
+  const { compendium } = useKnowledge();
   const commitName = () => {
     const trimmed = name.trim();
-    if (trimmed && trimmed !== token.name) update({ name: trimmed });
-    else setName(token.name);
+    if (!trimmed || trimmed === token.name) return setName(token.name);
+    // Named after a kind of creature ("Bandit 2"): that's what anyone can see, so it's not a secret.
+    const isKindOfCreature = Boolean(monsterIdForName(compendium, trimmed));
+    update({ name: trimmed, ...(isKindOfCreature && token.nameKnown === false && !token.appearance && { nameKnown: true }) });
   };
 
   return (
@@ -62,6 +65,7 @@ export function TokenInspector({ token, members, characters = [], send }: Inspec
         className="plain"
       />
       {!token.characterId && <TokenReference name={token.name} />}
+      <SecretName token={token} update={update} />
       <div className="swatches" role="radiogroup" aria-label="Colour">
         {TOKEN_COLORS.map((c) => (
           <button
@@ -111,6 +115,37 @@ export function TokenInspector({ token, members, characters = [], send }: Inspec
   );
 }
 
+/** Whether players know the token's name, and what they see instead (the party is always known). */
+function SecretName({ token, update }: { token: Token; update: (patch: { nameKnown?: boolean; appearance?: string }) => void }) {
+  const party = Boolean(token.characterId || token.ownerUserId);
+  const [look, setLook] = useState(token.appearance ?? '');
+  useEffect(() => setLook(token.appearance ?? ''), [token.appearance]);
+  if (party) return <p className="hint">Party members always show their names.</p>;
+  const known = token.nameKnown !== false;
+  return (
+    <>
+      <label className="check">
+        <input type="checkbox" checked={known} onChange={(e) => update({ nameKnown: e.target.checked })} />
+        Players know this name
+      </label>
+      {!known && (
+        <label className="field-row">
+          <span>Players see</span>
+          <input
+            value={look}
+            onChange={(e) => setLook(e.target.value)}
+            onBlur={() => look.trim() !== (token.appearance ?? '') && update({ appearance: look.trim() })}
+            onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+            maxLength={40}
+            placeholder={UNKNOWN_CREATURE}
+            aria-label="What players see"
+          />
+        </label>
+      )}
+    </>
+  );
+}
+
 interface AddTokenProps {
   scene: SceneView;
   members: Member[];
@@ -130,7 +165,8 @@ export function AddTokenMenu({ scene, members, characters, at, send }: AddTokenP
 
   const add = (name: string, ownerUserId: string | null, hidden: boolean) => {
     const color = TOKEN_COLORS[scene.tokens.length % TOKEN_COLORS.length]!;
-    send({ type: 'token:create', sceneId: scene.id, name, color, ownerUserId, hidden, ...at() });
+    // Creatures start with their name unknown to players; a player's own token is the party's.
+    send({ type: 'token:create', sceneId: scene.id, name, color, ownerUserId, hidden, nameKnown: ownerUserId !== null, ...at() });
     setOpen(false);
   };
 

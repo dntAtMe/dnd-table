@@ -3614,3 +3614,9 @@ textarea:focus {
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* GM: tokens whose names players don't know. */
+.token--secret-name .token__name {
+  font-style: italic;
+  opacity: 0.85;
+}
