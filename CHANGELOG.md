@@ -25,6 +25,8 @@ laptop, player phones and a TV.
   truesight, line of sight through walls and doors, and optional dynamic fog. Monster tokens see with
   their stat block's senses, and light spells (Light, Daylight, Produce Flame…) light the caster's
   token from the sheet.
+- Secret names: until the GM reveals a creature's name, players and the TV see what it looks like
+  ("Innkeeper", or "Unknown creature"), on the map, in the turn order and in posted messages.
 - A GM preview of the map as any player sees it (only the creatures they can see, their fog, secret
   doors as walls) or through any single token.
 - Area templates (cone, cube, cylinder, emanation, line, sphere) with the 2024 coverage rule and spell

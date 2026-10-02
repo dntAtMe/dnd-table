@@ -200,6 +200,17 @@ default on phones) and sets your own volume.
     truesight, and **Remove token**.
 - **Escape** closes the card; **Delete** removes the selected token.
 
+**Secret names.** Players can see what a creature is, not who it is. Until you reveal a creature's
+name, players and the TV see what it looks like instead, on the map, in the turn order and in
+anything posted to the log:
+- Under **Edit token**, untick **Players know this name** and fill in **Players see** ("Innkeeper",
+  "Hooded figure"). Left empty, players see "Unknown creature" with a "?" on the token.
+- **Reveal name** on the token's card tells everyone; **Hide name** makes it secret again. On your
+  map, secret names are in italics, and the card shows what players see.
+- Creatures you add with **+ Token** start with their name unknown. Monsters placed from the combat
+  tracker, and tokens you name after a kind of creature ("Bandit 2"), show that name: anyone can
+  see a goblin is a goblin. Party characters and player-controlled tokens always show their names.
+
 ### Fog, light and vision
 
 **Fog of war** (Edit scene → Fog of war) hides unexplored areas from players. With fog on, the Play
