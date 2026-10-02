@@ -1,6 +1,7 @@
-import { ARMOR, WEAPONS, type CharacterSpell, type EntryKind, type SpellDef } from '@dnd/rules';
+import { ARMOR, WEAPONS, spellLight, type CharacterSpell, type EntryKind, type SpellDef } from '@dnd/rules';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useKnowledge } from '../../lib/knowledge';
+import { useCharacterToken } from '../../lib/sceneTokens';
 import { MaybeLink } from '../knowledge/EntityLink';
 import { RichText } from '../knowledge/RichText';
 import { Pips } from './SheetCore';
@@ -156,6 +157,7 @@ export function SpellsTab({ a }: { a: CharacterActions }) {
                           {damage}
                         </button>
                       )}
+                      {spell.spellId && <SpellLightButton a={a} spellId={spell.spellId} />}
                     </div>
                     {open === index && (
                       <div className="spell__detail">
@@ -183,6 +185,35 @@ export function SpellsTab({ a }: { a: CharacterActions }) {
         ))}
       </section>
     </div>
+  );
+}
+
+/**
+ * For spells whose light the caster carries (Light, Daylight, Produce Flame…): lights the
+ * character's token on the current map, or puts it out again.
+ */
+function SpellLightButton({ a, spellId }: { a: CharacterActions; spellId: string }) {
+  const placed = useCharacterToken(a.id);
+  const light = spellLight(spellId);
+  if (!light || !placed || !a.canEdit) return null;
+  const { token, send } = placed;
+  const lit = token.light?.preset === light.preset;
+  return (
+    <button
+      type="button"
+      className={`toggle toggle--sm${lit ? ' toggle--on' : ''}`}
+      aria-pressed={lit}
+      onClick={() => send({ type: 'vision:token', tokenId: token.id, light: lit ? null : light })}
+      title={
+        lit
+          ? 'Put out the light on your token'
+          : light.bright
+            ? `Your token sheds Bright Light for ${light.bright} ft and Dim Light for ${light.dim} ft more`
+            : `Your token sheds Dim Light for ${light.dim} ft`
+      }
+    >
+      {lit ? 'Put out' : 'Light token'}
+    </button>
   );
 }
 

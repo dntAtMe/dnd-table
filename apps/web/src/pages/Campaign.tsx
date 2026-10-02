@@ -39,6 +39,7 @@ import { RichText } from '../components/knowledge/RichText';
 import { QuickSearch, useQuickSearchShortcut } from '../components/knowledge/QuickSearch';
 import { useGameSocket, type SocketStatus } from '../lib/useGameSocket';
 import { useMediaQuery } from '../lib/useMediaQuery';
+import { SceneTokensProvider } from '../lib/sceneTokens';
 import { useStoredState } from '../lib/useStoredState';
 
 const STATUS_TEXT: Record<SocketStatus, string> = {
@@ -347,6 +348,7 @@ export function Campaign({ user }: { user: User }) {
         </div>
       </header>
 
+      <SceneTokensProvider tokens={scene?.tokens ?? []} send={send}>
       <div className="campaign__grid">
         <aside className="campaign__side" data-tab="party">
           {editingScene && !phone && state.scene ? (
@@ -617,6 +619,7 @@ export function Campaign({ user }: { user: User }) {
           </Section>
         </div>
       </div>
+      </SceneTokensProvider>
 
       <nav className="tabbar" aria-label="Sections">
         {(['map', 'sheet', 'dice', 'log', 'party'] as const).map((t) => {

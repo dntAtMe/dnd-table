@@ -15,6 +15,8 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 type Send = (msg: ClientMessage) => void;
 
 export interface CharacterActions {
+  /** The character record's id. */
+  id: string;
   data: Character;
   derived: DerivedCharacter;
   canEdit: boolean;
@@ -82,7 +84,7 @@ export function useCharacter(record: CharacterRecord, canEdit: boolean, send: Se
     [canEdit, send, record.id, data],
   );
 
-  return { data, derived, canEdit, mode, setMode, visibility, setVisibility, rollD20, rollDamage, roll, patchState, update, notice };
+  return { id: record.id, data, derived, canEdit, mode, setMode, visibility, setVisibility, rollD20, rollDamage, roll, patchState, update, notice };
 }
 
 export const signed = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
