@@ -37,7 +37,7 @@ computer over Wi-Fi: no subscription, no cloud account, and your campaign stays 
 | ![Editing a scene](docs/screenshots/gm-edit-scene.png) | ![Nested knowledge base popups](docs/screenshots/knowledge-base.png) | ![Campaign wiki](docs/screenshots/wiki.png) |
 
 **New here? Read the [user guide](docs/user-guide.md)**: setting up a session, playing a character,
-and everything the GM can do.
+and everything the GM can do. The same docs are on the website: **https://dntatme.github.io/dnd-table/**.
 
 ## Running it
 
@@ -110,6 +110,7 @@ pnpm dev           # Vite on :5173 (open this) + API server on :3000, both reloa
 pnpm test          # rules engine and server integration tests (vitest)
 pnpm typecheck
 pnpm screenshots   # regenerate docs/screenshots from a seeded demo campaign
+pnpm site          # build the website (site/ and the docs) into _site/
 ```
 
 `pnpm screenshots` builds the client, starts a throwaway server with a demo campaign and drives

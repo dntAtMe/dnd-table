@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>dnd-table: your D&amp;D table, on every screen</title>
+    <meta name="description" content="A free, open-source virtual tabletop for D&D 5e (2024 rules) around a real table. The GM runs it from a laptop, players use their phones, and a TV shows the battle map. Runs on your own computer." />
+    <meta property="og:title" content="dnd-table" />
+    <meta property="og:description" content="Your D&D table, on every screen. A free virtual tabletop for D&D 5e (2024 rules) that runs on your own computer." />
+    <meta property="og:image" content="screenshots/gm-combat.png" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    {{fonts}}
+    <link rel="stylesheet" href="site.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    {{nav}}
+
+    <main id="main">
+      <section class="hero">
+        <div class="hero__inner">
+          <p class="eyebrow">Free and open source · D&amp;D 5e, 2024 rules</p>
+          <h1>Your D&amp;D table, <em>on every screen</em>.</h1>
+          <p class="lede">
+            dnd-table is a virtual tabletop for playing in person. The GM runs the game from a laptop, players use their phones,
+            and a TV shows the battle map to the room. It runs on your own computer: no subscription, no cloud account.
+          </p>
+          <div class="hero__ctas">
+            <a class="btn btn--primary" href="install.html">Get started</a>
+            <a class="btn" href="user-guide.html">Read the guide</a>
+            <a class="btn" href="{{repo}}">
+              <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38v-1.34c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.72 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+              GitHub
+            </a>
+          </div>
+          <p class="hero__meta"><span>Version {{version}}</span><span>MIT licence</span><span>Runs on your own computer</span></p>
+          <figure class="shot hero__shot">
+            <div class="shot__bar" aria-hidden="true"><i></i><i></i><i></i><span>The GM's screen during a fight</span></div>
+            <img src="screenshots/gm-combat.png" width="1440" height="900" alt="The GM's screen: a cave map with tokens, a goblin's quick actions open beside it, the turn order, dice and the log." />
+          </figure>
+        </div>
+      </section>
+
+      <section class="section" id="screens">
+        <p class="eyebrow">One game, three kinds of screen</p>
+        <h2>Everyone sees what they should, and nothing more.</h2>
+        <p class="lede">
+          Every screen joins the same live session. The server decides what each one may see, so hidden creatures, fog, secret
+          doors and the GM's notes never reach a player's phone.
+        </p>
+        <div class="screens">
+          <figure class="screen">
+            <div class="shot"><img src="screenshots/gm-edit-scene.png" width="1440" height="900" alt="The GM preparing a scene: walls, doors and terrain on a cave map, with the scene settings in the sidebar." loading="lazy" /></div>
+            <figcaption>
+              <h3>The GM's laptop</h3>
+              <p>Prepare scenes, run fights, roll in secret, and see the whole map, including what the players can't.</p>
+            </figcaption>
+          </figure>
+          <figure class="screen screen--phone">
+            <div class="phone"><img src="screenshots/player-map.png" width="780" height="1688" alt="A player's phone: the map, with their character's attacks and checks in a sheet along the bottom." loading="lazy" /></div>
+            <figcaption>
+              <h3>Players' phones</h3>
+              <p>Their character sheet, their tokens and a tap-to-roll for everything. Nothing to install.</p>
+            </figcaption>
+          </figure>
+          <figure class="screen">
+            <div class="shot"><img src="screenshots/table-display.png" width="1920" height="1080" alt="The table display: the battle map full screen with the turn order and recent rolls." loading="lazy" /></div>
+            <figcaption>
+              <h3>The TV on the table</h3>
+              <p>Any browser becomes the shared screen with a pairing code: the map, the turn order, rolls and handouts.</p>
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="section" id="features" style="padding-top: 0">
+        <p class="eyebrow">Features</p>
+        <h2>Everything the table needs, built on the 2024 rules.</h2>
+        <div class="grid">
+          <article class="card">
+            <div class="card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6.5 9 4l6 2.5L21 4v13.5L15 20l-6-2.5L3 20z" /><path d="M9 4v13.5M15 6.5V20" /></svg></div>
+            <h3>Battle maps</h3>
+            <p>Upload a map or start from a grid. Walls, doors and terrain, fog of war, light sources and line of sight, so each player sees only what their character can.</p>
+          </article>
+          <article class="card">
+            <div class="card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l3 3v15H6z" /><path d="M9 9h6M9 13h6M9 17h4" /></svg></div>
+            <h3>Characters</h3>
+            <p>A step-by-step creator and level-up, and a sheet that works out every bonus, applies conditions to rolls and tracks HP, slots and rests.</p>
+          </article>
+          <article class="card">
+            <div class="card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14.5 17.5 5-5-8-8h-5v5l8 8" /><path d="m5 19 4-4M3 21l2-2" /></svg></div>
+            <h3>Combat</h3>
+            <p>Initiative, 341 SRD monsters with stat blocks you can roll from, area templates, and quick actions on every token, right on the map.</p>
+          </article>
+          <article class="card">
+            <div class="card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6.5C10 5 7 4.5 3 5v13c4-.5 7 0 9 1.5 2-1.5 5-2 9-1.5V5c-4-.5-7 0-9 1.5Z" /><path d="M12 6.5V19.5" /></svg></div>
+            <h3>Knowledge base</h3>
+            <p>Every spell, monster, item and rule is a link, with nested popups and related entries. The whole SRD, plus the rules glossary, one click away.</p>
+          </article>
+          <article class="card">
+            <div class="card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" /></svg></div>
+            <h3>Campaign wiki</h3>
+            <p>NPCs, places and lore that link themselves wherever they're mentioned, shared with the party when you choose. Secret notes stay yours.</p>
+          </article>
+          <article class="card">
+            <div class="card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg></div>
+            <h3>Handouts and sound</h3>
+            <p>Show a letter or a portrait full screen on the TV. Play music and layered ambience, in sync on every screen that wants it.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" style="padding-top: 0">
+        <div class="showcase">
+          <div class="showcase__text">
+            <p class="eyebrow">Look anything up</p>
+            <h3>Rules at your fingertips, not in a rulebook.</h3>
+            <p>
+              Hover a name to preview it, click to pin it, and follow links into further popups. Ctrl/⌘ K searches everything. Each
+              entry also lists what's related: which spells deal Fire damage, which creatures resist it, what protects against it.
+            </p>
+            <ul>
+              <li>339 spells, 341 monsters, 262 magic items</li>
+              <li>The full SRD rules glossary, linked as you read</li>
+              <li>Your campaign's own pages, mixed right in</li>
+            </ul>
+          </div>
+          <figure class="shot"><img src="screenshots/knowledge-base.png" width="1440" height="900" alt="Nested popups: Fireball, and beside it the Fire damage type with spells, creatures and protections." loading="lazy" /></figure>
+        </div>
+
+        <div class="showcase showcase--flip">
+          <div class="showcase__text">
+            <p class="eyebrow">For players</p>
+            <h3>A character sheet that does the maths.</h3>
+            <p>
+              Build a character by the 2024 rules, then tap any bonus to roll it. Advantage, conditions and exhaustion are applied
+              for you, and HP, spell slots and resources stay in sync with the GM's tracker.
+            </p>
+            <ul>
+              <li>Creator and level-up for every SRD class and species</li>
+              <li>Attacks, spells, checks and saves in one tap</li>
+              <li>Works on any phone, no app to install</li>
+            </ul>
+          </div>
+          <figure class="showcase__narrow"><div class="phone"><img src="screenshots/player-sheet.png" width="780" height="1688" alt="A wizard's character sheet on a phone: hit points, AC, initiative and speed." loading="lazy" /></div></figure>
+        </div>
+
+        <div class="showcase">
+          <div class="showcase__text">
+            <p class="eyebrow">For the GM</p>
+            <h3>Your world, linked together.</h3>
+            <p>
+              Write NPCs, places and factions once; their names link themselves in handouts, chat and other pages. Share each page with
+              everyone, some players or nobody, and keep secret notes only you can see.
+            </p>
+            <ul>
+              <li>Creatures keep their names secret until you reveal them</li>
+              <li>Preview the map exactly as any player sees it</li>
+              <li>Handouts and images straight onto the TV</li>
+            </ul>
+          </div>
+          <figure class="shot"><img src="screenshots/wiki.png" width="1440" height="900" alt="The campaign wiki: an NPC page with aliases, tags, linked text, GM-only secret notes and backlinks." loading="lazy" /></figure>
+        </div>
+      </section>
+
+      <section class="band">
+        <div class="section">
+          <p class="eyebrow">Private by design</p>
+          <h2>Your table, your computer, your data.</h2>
+          <div class="facts">
+            <div>
+              <h3>Runs on your network</h3>
+              <p>One computer at the table runs it; everyone else opens it in a browser over Wi-Fi.</p>
+            </div>
+            <div>
+              <h3>No subscription</h3>
+              <p>Free and open source under the MIT licence. No accounts with anyone but your own server.</p>
+            </div>
+            <div>
+              <h3>One folder to back up</h3>
+              <p>Your whole campaign is one database and your uploads. Copy the folder and you're safe.</p>
+            </div>
+            <div>
+              <h3>Secrets stay secret</h3>
+              <p>Hidden creatures, fog, secret doors and notes are filtered on the server, never just hidden on screen.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="start">
+        <div class="start">
+          <div>
+            <p class="eyebrow">Get started</p>
+            <h2>Up and running in a few minutes.</h2>
+            <p class="lede" style="font-size: 17px">
+              You need <a href="https://nodejs.org">Node.js</a> 22.5 or newer and <a href="https://pnpm.io/installation">pnpm</a>. Start it on
+              one computer, then open the address it prints on everyone's phones.
+            </p>
+            <div class="hero__ctas" style="justify-content: flex-start">
+              <a class="btn btn--primary" href="install.html">Installation guide</a>
+              <a class="btn" href="{{repo}}/releases">Releases</a>
+            </div>
+          </div>
+          <pre class="terminal"><span class="c"># Download and start dnd-table</span>
+<span class="p">$ </span>git clone {{repo}}.git
+<span class="p">$ </span>cd dnd-table
+<span class="p">$ </span>pnpm install
+<span class="p">$ </span>pnpm build
+<span class="p">$ </span>pnpm start
+
+<span class="c">  Open on this computer:  http://localhost:3000</span>
+<span class="c">  Open on your network:   http://192.168.0.12:3000</span></pre>
+        </div>
+      </section>
+
+      <section class="section cta" style="padding-top: 0">
+        <h2>Bring the table together.</h2>
+        <div class="hero__ctas">
+          <a class="btn btn--primary" href="install.html">Get started</a>
+          <a class="btn" href="user-guide.html">Read the guide</a>
+          <a class="btn" href="changelog.html">What's in {{version}}</a>
+        </div>
+      </section>
+    </main>
+
+    {{footer}}
+  </body>
+</html>

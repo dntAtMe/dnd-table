@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · dnd-table</title>
+    <meta name="description" content="{{description}}" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    {{fonts}}
+    <link rel="stylesheet" href="site.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    {{nav}}
+    <div class="docs">
+      <aside class="toc" aria-label="Documentation">
+        <div class="toc__pages">
+          <p class="toc__title">Docs</p>
+          <ul>
+            <li><a href="user-guide.html"{{current:user-guide}}>User guide</a></li>
+            <li><a href="install.html"{{current:install}}>Install and hosting</a></li>
+            <li><a href="changelog.html"{{current:changelog}}>Changelog</a></li>
+          </ul>
+        </div>
+        <div class="toc__sections">
+          <p class="toc__title">On this page</p>
+          {{toc}}
+        </div>
+      </aside>
+      <main id="main" class="prose">
+        {{content}}
+        <p class="edit">Something unclear or out of date? <a href="{{repo}}/blob/main/{{source}}">Edit this page on GitHub</a>.</p>
+      </main>
+    </div>
+    {{footer}}
+    <script>
+      // Highlight, in the page outline, the last section heading scrolled past.
+      const heads = [...document.querySelectorAll('.prose h2[id], .prose h3[id]')];
+      const links = [...document.querySelectorAll('.toc__sections a')];
+      const update = () => {
+        let current = heads[0];
+        for (const h of heads) {
+          if (h.getBoundingClientRect().top < 140) current = h;
+          else break;
+        }
+        for (const a of links) a.classList.toggle('is-current', current !== undefined && decodeURIComponent(a.hash.slice(1)) === current.id);
+      };
+      addEventListener('scroll', update, { passive: true });
+      update();
+    </script>
+  </body>
+</html>

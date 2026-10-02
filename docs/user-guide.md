@@ -233,10 +233,10 @@ table screens show what the whole party sees.
 - **Dynamic fog** reveals whatever players see, so explored areas stay mapped (dimmed).
 - You see everything, with light levels shaded and each light's reach outlined.
 - **Preview someone's view** from the dropdown in the Play toolbar:
-  - **As <player>** shows the map exactly as that player's screen does: what their tokens see,
-    their fog, secret doors as plain walls, and only the creatures they can see.
-  - **Through <token>** shows what one creature sees, e.g. whether the goblin by the door can see
-    the rogue.
+  - **As Mira** (any player) shows the map exactly as that player's screen does: what their tokens
+    see, their fog, secret doors as plain walls, and only the creatures they can see.
+  - **Through Goblin Warrior 1** (any token) shows what one creature sees, e.g. whether the goblin
+    by the door can see the rogue.
   - A banner shows whose view you're in; **GM view** goes back.
 
 ### Combat

@@ -17,12 +17,14 @@
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
     "import:srd": "node scripts/import-srd.mjs",
-    "screenshots": "tsx scripts/screenshots.ts"
+    "screenshots": "tsx scripts/screenshots.ts",
+    "site": "node scripts/build-site.mjs"
   },
   "devDependencies": {
     "@dnd/protocol": "workspace:*",
     "@dnd/rules": "workspace:*",
     "@types/ws": "^8.18.2",
+    "marked": "^18.0.14",
     "playwright": "^1.63.0",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
