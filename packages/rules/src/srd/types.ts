@@ -175,6 +175,16 @@ export interface RulesText {
   alignments: Record<string, { name: string; abbreviation: string; description: string }>;
   languages: Record<string, { name: string; rare?: boolean; note?: string }>;
   poisons: Record<string, { name: string; type: string; cost: number; description: string }>;
+  /** SRD 5.2.1 Rules Glossary, without the conditions (those are in `conditions`). */
+  glossary: GlossaryEntry[];
+}
+
+export interface GlossaryEntry {
+  id: string;
+  name: string;
+  /** "Action", "Area of Effect", "Attitude" or "Hazard". */
+  tag?: string;
+  description: string;
 }
 
 export interface MagicItemDef {

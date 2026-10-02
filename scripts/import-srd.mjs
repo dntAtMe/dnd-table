@@ -1,12 +1,14 @@
 #!/usr/bin/env node
-// Imports SRD 5.2 (D&D 2024) reference data from 5e-bits/5e-database at a pinned commit and
-// writes compact, normalised JSON to packages/rules/src/srd/data. Same commit → same output.
+// Imports SRD 5.2 (D&D 2024) reference data from 5e-bits/5e-database at a pinned commit, plus the
+// SRD 5.2.1 rules glossary (see GLOSSARY), and writes compact, normalised JSON to
+// packages/rules/src/srd/data. Same commits → same output.
 //
 //   node scripts/import-srd.mjs              # fetch from GitHub at the pinned commit
 //   node scripts/import-srd.mjs --cache DIR  # read/write raw files in DIR (offline re-runs)
 //
 // To update: change COMMIT, re-run, review the diff.
 
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +16,20 @@ import { fileURLToPath } from 'node:url';
 const REPO = '5e-bits/5e-database';
 const COMMIT = 'bce51b3958573819e3b842fbc0cd9524fe4bc2e1';
 const OUT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../packages/rules/src/srd/data');
+
+/**
+ * 5e-database's 2024 dataset has no rules glossary (Advantage, Cover, Opportunity Attacks…). This is
+ * the SRD 5.2.1 glossary as Markdown (CC-BY-4.0), pinned by commit and checksum. It was compared entry
+ * by entry with the official PDF (media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf,
+ * SHA-256 8974902d109d6e63672d7c490bde9ccf052410503d9cfa768237154fbc5e3d87, pages 176–191): all 155
+ * entries match word for word; only curly quotes are straight.
+ */
+const GLOSSARY = {
+  repo: 'downfallx/dnd-5e-srd-markdown',
+  commit: '1b4b99dcb786cdd1a2fb26f8acec1551191f1ca4',
+  file: 'rules-glossary.md',
+  sha256: '9b25315ef6728518f55b5b0e016d2083091f648e955a4e2ad1c1cd5d31823b2f',
+};
 
 const FILES = [
   'Alignments',
@@ -58,6 +74,25 @@ async function load(name) {
     writeFileSync(path.join(cacheDir, file), text);
   }
   return JSON.parse(text);
+}
+
+async function loadGlossary() {
+  const cached = cacheDir && path.join(cacheDir, GLOSSARY.file);
+  let text;
+  if (cached && existsSync(cached)) text = readFileSync(cached, 'utf8');
+  else {
+    const url = `https://raw.githubusercontent.com/${GLOSSARY.repo}/${GLOSSARY.commit}/${GLOSSARY.file}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+    text = await res.text();
+    if (cached) {
+      mkdirSync(cacheDir, { recursive: true });
+      writeFileSync(cached, text);
+    }
+  }
+  const sha = createHash('sha256').update(text).digest('hex');
+  if (sha !== GLOSSARY.sha256) throw new Error(`${GLOSSARY.file}: SHA-256 ${sha}, expected ${GLOSSARY.sha256}`);
+  return text;
 }
 
 // ---------- text clean-up ----------
@@ -169,6 +204,7 @@ const PATCHES = {
 // ---------- main ----------
 
 const raw = Object.fromEntries(await Promise.all(FILES.map(async (f) => [f, await load(f)])));
+const glossaryMarkdown = await loadGlossary();
 
 buildVocabulary(
   [
@@ -619,6 +655,71 @@ const magicItems = raw['Magic-Items']
   .sort((a, b) => a.name.localeCompare(b.name));
 assert(magicItems.length > 200 && magicItems.every((m) => m.description), 'magic items incomplete');
 
+// ---------- rules glossary ----------
+
+const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+/** One HTML table as text lines: the header row in bold, cells joined by " · ". */
+function tableText(html) {
+  const rows = [...html.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map(([, row]) => ({
+    head: /<th/.test(row),
+    cells: [...row.matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)].map(([, c]) => c.replace(/\s+/g, ' ').trim()).filter(Boolean),
+  }));
+  return rows
+    .filter((r) => r.cells.length)
+    .map((r) => (r.head ? `**${r.cells.join(' · ')}**` : r.cells.join(' · ')))
+    .join('\n');
+}
+
+/**
+ * The glossary's entries ("#### Term" or "#### Term [Tag]"; one is "###") as plain text with
+ * **bold** run-in headings and table titles, bullet lists, and "See also" references to other
+ * entries turned into links. Conditions are skipped: they come from 5e-database already.
+ */
+function parseGlossary(md) {
+  const defs = md.split(/^## Rules Definitions\s*$/m)[1];
+  assert(defs, 'Glossary: no "Rules Definitions" section');
+  const parts = defs.split(/^#{3,4} (.+)$/m).slice(1);
+  const entries = [];
+  for (let i = 0; i < parts.length; i += 2) {
+    const [, name, tag] = /^(.*?)(?: \[(.*)\])?\s*$/.exec(parts[i]);
+    entries.push({ id: slug(name), name, tag: tag || undefined, body: parts[i + 1].trim() });
+  }
+  const byName = new Map(entries.map((e) => [e.name.toLowerCase(), e]));
+  const linkTo = (quoted) => {
+    const e = byName.get(quoted.toLowerCase());
+    if (!e) return null;
+    return e.tag === 'Condition' ? `[[condition:${e.id}|${quoted}]]` : `[[rule:${e.id}|${quoted}]]`;
+  };
+  const out = [];
+  for (const e of entries) {
+    if (e.tag === 'Condition') continue;
+    let text = e.body
+      .replace(/<table>[\s\S]*?<\/table>/g, (t) => tableText(t))
+      // "_See also_ "Unarmed Strike" and "Grappled."": quoted entry names become links.
+      .replace(/_See also_ ([^\n]*)/g, (_, rest) =>
+        'See also ' + rest.replace(/"([^"]+?)([.,;]?)"/g, (m, q, punct) => (linkTo(q) ? `${linkTo(q)}${punct}` : m)),
+      )
+      .replace(/^_([^_\n]+?\.)_/gm, '**$1**')
+      .replace(/_([^_\n]+)_/g, '$1')
+      .replace(/^- /gm, '• ')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    // Bullet lists read as one block, not a paragraph per line.
+    text = text.replace(/\n\n(?=• )/g, '\n');
+    assert(!/[<>]|(^|\s)_|_(\s|$)/.test(text), `Glossary: markup left in ${e.name}`);
+    out.push(compact({ id: e.id, name: e.name, tag: e.tag, description: text }));
+  }
+  return { all: entries.length, entries: out };
+}
+
+const glossary = parseGlossary(glossaryMarkdown);
+assert(glossary.all === 155, `Glossary: ${glossary.all} entries, expected 155`);
+for (const name of ['Advantage', 'Cover', 'Opportunity Attacks', 'Grappling', 'Difficult Terrain', 'Concentration', 'Bloodied']) {
+  assert(glossary.entries.some((e) => e.name === name), `Glossary: missing ${name}`);
+}
+
 const rules = {
   conditions: Object.fromEntries(raw.Conditions.map((c) => [c.index, { name: c.name, description: clean(c.description ?? c.desc) }])),
   masteries: Object.fromEntries(raw['Weapon-Mastery-Properties'].map((m) => [m.index, { name: m.name, description: clean(m.description ?? m.desc) }])),
@@ -629,6 +730,7 @@ const rules = {
   alignments: Object.fromEntries(raw.Alignments.map((d) => [d.index, { name: d.name, abbreviation: d.abbreviation, description: clean(d.description ?? d.desc) }])),
   languages: Object.fromEntries(raw.Languages.map((d) => [d.index, compact({ name: d.name, rare: d.is_rare || undefined, note: clean(d.note) || undefined })])),
   poisons: Object.fromEntries(raw.Poisons.map((d) => [d.index, { name: d.name, type: d.type, cost: d.cost, description: clean(d.description ?? d.desc) }])),
+  glossary: glossary.entries,
 };
 
 mkdirSync(OUT, { recursive: true });
@@ -653,8 +755,9 @@ writeJson('manifest', {
   source: `https://github.com/${REPO}`,
   commit: COMMIT,
   dataset: 'src/2024/en (SRD 5.2)',
+  glossary: { source: `https://github.com/${GLOSSARY.repo}`, commit: GLOSSARY.commit, file: GLOSSARY.file, sha256: GLOSSARY.sha256, edition: 'SRD 5.2.1' },
   license:
-    'This work includes material from the System Reference Document 5.2 ("SRD 5.2") by Wizards of the Coast LLC, available at https://www.dndbeyond.com/srd. The SRD 5.2 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.',
+    'This work includes material from the System Reference Document 5.2 ("SRD 5.2") by Wizards of the Coast LLC, available at https://www.dndbeyond.com/srd. The SRD 5.2 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode. This work includes material from the System Reference Document 5.2.1 ("SRD 5.2.1") by Wizards of the Coast LLC, available at https://www.dndbeyond.com/srd. The SRD 5.2.1 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.',
   files: Object.fromEntries(written.map((w) => [w.name, w.entries])),
 });
 
