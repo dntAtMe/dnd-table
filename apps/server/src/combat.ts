@@ -23,6 +23,7 @@ import {
   gridGeometry,
   healthStatus,
   monsterInitiative,
+  monsterSenses,
   rollDice,
   type Character,
   type ConditionId,
@@ -463,6 +464,9 @@ export class CombatTracker<C extends CombatConn> {
             ...spots[i]!,
           })
         : undefined;
+      // The token sees with the monster's senses (darkvision, blindsight, truesight).
+      const senses = monsterSenses(def);
+      if (token && Object.keys(senses).length) this.store.setTokenVision(token.id, { senses });
       encounter.combatants.push(
         this.blank(encounter, {
           name,

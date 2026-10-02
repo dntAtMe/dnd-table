@@ -859,7 +859,8 @@ describe('combat', () => {
     const added = await gmSock.until('combat', (m) => m.combat?.combatants.length === 4);
     const goblin = added.combat!.combatants.find((c) => c.name === 'Goblin Warrior 1')!;
     expect(goblin).toMatchObject({ kind: 'monster', monsterId: 'goblin-warrior', ac: 15, hp: 10, hpMax: 10, initiativeBonus: 2 });
-    expect(placed.scene!.tokens.find((t) => t.id === goblin.tokenId)).toBeDefined();
+    // Their tokens see with the stat block's senses.
+    expect(placed.scene!.tokens.find((t) => t.id === goblin.tokenId)).toMatchObject({ senses: { darkvision: 60 } });
 
     // The server rolls for every creature without initiative, hidden from players.
     gmSock.send({ type: 'combat:roll-initiative' });
