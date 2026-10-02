@@ -37,14 +37,25 @@ export const DIM = 1;
 export const BRIGHT = 2;
 export type LightLevel = typeof DARK | typeof DIM | typeof BRIGHT;
 
-/** Common light sources (2024 PHB equipment and spells). `dim` is the extra distance beyond `bright`. */
+/**
+ * Common light sources (2024 PHB equipment and spells). `dim` is the extra distance beyond `bright`.
+ * Spell lights name their spell: those are the spells whose light the caster carries (on an object
+ * they hold, in their hand or around them), so casting one can light the caster's token. Their
+ * distances are checked against the SRD spell text in the tests.
+ */
 export const LIGHT_PRESETS = [
   { id: 'candle', label: 'Candle', bright: 5, dim: 5 },
   { id: 'torch', label: 'Torch', bright: 20, dim: 20 },
   { id: 'lamp', label: 'Lamp', bright: 15, dim: 30 },
   { id: 'lantern', label: 'Lantern (hooded)', bright: 30, dim: 30 },
-  { id: 'light', label: 'Light (cantrip)', bright: 20, dim: 20 },
-  { id: 'daylight', label: 'Daylight (spell)', bright: 60, dim: 60 },
+  { id: 'light', label: 'Light (cantrip)', bright: 20, dim: 20, spell: 'light' },
+  { id: 'dancing-lights', label: 'Dancing Lights (cantrip)', bright: 0, dim: 10, spell: 'dancing-lights' },
+  { id: 'produce-flame', label: 'Produce Flame (cantrip)', bright: 20, dim: 20, spell: 'produce-flame' },
+  { id: 'flame-blade', label: 'Flame Blade (spell)', bright: 10, dim: 10, spell: 'flame-blade' },
+  { id: 'continual-flame', label: 'Continual Flame (spell)', bright: 20, dim: 20, spell: 'continual-flame' },
+  { id: 'daylight', label: 'Daylight (spell)', bright: 60, dim: 60, spell: 'daylight' },
+  { id: 'fire-shield', label: 'Fire Shield (spell)', bright: 10, dim: 10, spell: 'fire-shield' },
+  { id: 'sunbeam', label: 'Sunbeam (spell)', bright: 30, dim: 30, spell: 'sunbeam' },
 ] as const;
 export const LIGHT_PRESET_IDS: [LightPresetId, ...LightPresetId[]] = ['custom', ...LIGHT_PRESETS.map((p) => p.id)];
 export type LightPresetId = (typeof LIGHT_PRESETS)[number]['id'] | 'custom';
@@ -76,6 +87,12 @@ export const DEFAULT_SCENE_VISION: SceneVision = { enabled: false, lighting: 'br
 
 export function lightPreset(id: LightPresetId): LightSource | null {
   const p = LIGHT_PRESETS.find((l) => l.id === id);
+  return p ? { preset: p.id, bright: p.bright, dim: p.dim } : null;
+}
+
+/** The light a spell puts on its caster's token, if it's one of the carried-light spells. */
+export function spellLight(spellId: string): LightSource | null {
+  const p = LIGHT_PRESETS.find((l) => 'spell' in l && l.spell === spellId);
   return p ? { preset: p.id, bright: p.bright, dim: p.dim } : null;
 }
 

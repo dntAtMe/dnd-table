@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest';
+import { SPELLS_BY_ID } from './srd/spells';
 import { MapData, edgeCode, terrainCode, type Edge } from './mapdata';
 import { lineBlock } from './movement';
 import {
   BRIGHT,
   DARK,
   DIM,
+  LIGHT_PRESETS,
   SightMap,
   computeSight,
   illuminate,
   lightPreset,
+  spellLight,
   viewField,
   type Emitter,
   type Lighting,
@@ -221,5 +224,34 @@ describe('computeSight', () => {
     expect(dark).toBeLessThan(1000);
     expect(open).toBeLessThan(1000);
     expect(walled).toBeLessThan(1000);
+  });
+});
+
+describe('spell lights', () => {
+  /** Bright and dim distances as the SRD spell text gives them. */
+  function fromText(text: string): { bright: number; dim: number } | null {
+    const both = /Bright Light in a (\d+)-foot radius and Dim Light for an additional (\d+) feet/.exec(text);
+    if (both) return { bright: Number(both[1]), dim: Number(both[2]) };
+    const sphere = /(\d+)-foot-radius Sphere[^.]*\.[^.]*Bright Light and sheds Dim Light for an additional (\d+) feet/.exec(text);
+    if (sphere) return { bright: Number(sphere[1]), dim: Number(sphere[2]) };
+    const dimOnly = /Dim Light in a (\d+)-?\s?foot radius/.exec(text);
+    return dimOnly ? { bright: 0, dim: Number(dimOnly[1]) } : null;
+  }
+
+  it("match the distances in each spell's SRD text", () => {
+    const spellPresets = LIGHT_PRESETS.filter((p) => 'spell' in p);
+    expect(spellPresets.length).toBe(8);
+    for (const p of spellPresets) {
+      const spell = SPELLS_BY_ID[(p as { spell: string }).spell];
+      expect(spell, p.id).toBeDefined();
+      expect(fromText(spell!.description), p.id).toEqual({ bright: p.bright, dim: p.dim });
+    }
+  });
+
+  it('give the light for a spell, and nothing for spells that light something else', () => {
+    expect(spellLight('light')).toEqual({ preset: 'light', bright: 20, dim: 20 });
+    expect(spellLight('daylight')).toEqual({ preset: 'daylight', bright: 60, dim: 60 });
+    expect(spellLight('faerie-fire')).toBeNull();
+    expect(spellLight('fireball')).toBeNull();
   });
 });
