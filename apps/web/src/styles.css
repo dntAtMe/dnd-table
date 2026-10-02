@@ -3608,3 +3608,9 @@ textarea:focus {
   padding: 0;
   border: 0;
 }
+
+/* GM previewing a player's (or a token's) view of the map. */
+.map-banner--preview {
+  border-color: var(--accent);
+  color: var(--accent);
+}

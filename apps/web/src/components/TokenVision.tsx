@@ -148,24 +148,41 @@ export function sheetDarkvision(characters: CharacterRecord[]): (token: Token) =
   return (token) => (token.characterId && byId.get(token.characterId)) || 0;
 }
 
-/** GM map toolbar: see the map through one player's tokens. */
-export function VisionPreviewPicker({ members, value, onChange }: { members: Member[]; value: string | null; onChange: (userId: string | null) => void }) {
+/**
+ * GM map toolbar: see the map as one player sees it ("player:<userId>"), or through a single
+ * token ("token:<tokenId>"), e.g. to check what a goblin can see from where it stands.
+ */
+export function VisionPreviewPicker({ members, tokens, value, onChange }: { members: Member[]; tokens: Token[]; value: string | null; onChange: (value: string | null) => void }) {
+  const players = members.filter((m) => m.role === 'player');
   return (
     <select
       className="vision-preview"
       value={value ?? ''}
       onChange={(e) => onChange(e.target.value || null)}
-      aria-label="Preview a player's vision"
-      title="See the map as one player's tokens see it"
+      aria-label="Preview what a player or a token sees"
+      title="See the map as a player sees it, or through one token"
     >
       <option value="">GM view</option>
-      {members
-        .filter((m) => m.role === 'player')
-        .map((m) => (
-          <option key={m.userId} value={m.userId}>
-            As {m.name}
-          </option>
-        ))}
+      {players.length > 0 && (
+        <optgroup label="As a player">
+          {players.map((m) => (
+            <option key={m.userId} value={`player:${m.userId}`}>
+              As {m.name}
+            </option>
+          ))}
+        </optgroup>
+      )}
+      {tokens.length > 0 && (
+        <optgroup label="Through one token">
+          {[...tokens]
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map((t) => (
+              <option key={t.id} value={`token:${t.id}`}>
+                Through {t.name}
+              </option>
+            ))}
+        </optgroup>
+      )}
     </select>
   );
 }

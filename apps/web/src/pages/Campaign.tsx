@@ -10,6 +10,7 @@ import { SecretDoorToggle, TerrainPicker } from '../components/map/MapEditorPane
 import { SceneEditCard } from '../components/map/SceneEditCard';
 import { MapToolbar, type ToolOption } from '../components/map/MapToolbar';
 import { MapView, type MapTool } from '../components/map/MapView';
+import type { VisionPreview } from '../components/map/VisionLayer';
 import { TokenActions } from '../components/map/TokenActions';
 import { DEFAULT_TEMPLATE_SETTINGS, type TemplateSettings } from '../components/map/TemplateLayer';
 import { TemplateCard, TemplateOptions } from '../components/map/TemplatePanel';
@@ -183,9 +184,9 @@ export function Campaign({ user }: { user: User }) {
   }, [tableFollows, sendCamera]);
   const isGm = hello?.you.role === 'gm';
   /** GM: whose vision the map previews (null = the GM's own view). */
-  const [previewUserId, setPreviewUserId] = useState<string | null>(null);
+  /** GM: whose eyes the map shows ("player:<userId>" or "token:<tokenId>"), or null for the GM's own view. */
+  const [previewKey, setPreviewKey] = useState<string | null>(null);
   const darkvisionOf = useMemo(() => sheetDarkvision(state.characters), [state.characters]);
-  const visionPreview = isGm && previewUserId && scene?.vision.enabled ? { userId: previewUserId, darkvision: darkvisionOf } : null;
   const unreadHandouts = isGm ? 0 : state.handouts.filter((h) => h.unread).length;
   const [handoutNotice, dismissHandoutNotice] = useHandoutNotice(state.handouts, Boolean(hello) && !isGm);
   const [playerShowcase, closePlayerShowcase] = usePlayerShowcase(isGm ? null : state.showcase);
@@ -211,11 +212,26 @@ export function Campaign({ user }: { user: User }) {
   const canEditTemplate = Boolean(selectedTemplate && (isGm || selectedTemplate.ownerUserId === hello?.you.userId));
   const { combat } = state;
   const editingScene = isGm && mapMode === 'edit';
+  const visionPreview = useMemo((): VisionPreview | null => {
+    if (!isGm || !previewKey || !scene?.vision.enabled || editingScene) return null;
+    const [kind, id = ''] = previewKey.split(':') as ['player' | 'token', string];
+    if (kind === 'player' && state.members.some((m) => m.userId === id)) return { kind, userId: id, darkvision: darkvisionOf };
+    if (kind === 'token' && scene.tokens.some((t) => t.id === id)) return { kind, tokenId: id, darkvision: darkvisionOf };
+    return null;
+  }, [isGm, previewKey, scene, editingScene, state.members, darkvisionOf]);
+  const previewName =
+    visionPreview?.kind === 'player'
+      ? state.members.find((m) => m.userId === visionPreview.userId)?.name
+      : visionPreview?.kind === 'token'
+        ? scene?.tokens.find((t) => t.id === visionPreview.tokenId)?.name
+        : undefined;
   /** Phone layout: the sidebar is a tab of its own, so scene editing happens on the map. */
   const phone = useMediaQuery('(max-width: 960px)');
+  // Previewing a player shows other creatures' health as they'd see it (Bloodied, not HP bars).
+  const previewPlayer = visionPreview?.kind === 'player' ? visionPreview.userId : null;
   const decorations = useMemo(
-    () => tokenDecorations(combat, scene?.tokens ?? [], { isGm, userId: hello?.you.userId }),
-    [combat, scene?.tokens, isGm, hello?.you.userId],
+    () => tokenDecorations(combat, scene?.tokens ?? [], previewPlayer ? { isGm: false, userId: previewPlayer } : { isGm, userId: hello?.you.userId }),
+    [combat, scene?.tokens, isGm, hello?.you.userId, previewPlayer],
   );
   const activeCombatant = combat?.combatants.find((c) => c.id === combat.activeId);
   const myTurn = Boolean(activeCombatant && !isGm && activeCombatant.ownerUserId === hello?.you.userId);
@@ -465,7 +481,7 @@ export function Campaign({ user }: { user: User }) {
                 {editingScene && tool === 'terrain' && <TerrainPicker value={terrain} onChange={setTerrain} />}
                 {editingScene && tool === 'door' && <SecretDoorToggle secret={secretDoors} onChange={setSecretDoors} />}
                 {isGm && !editingScene && scene.vision.enabled && (
-                  <VisionPreviewPicker members={state.members} value={previewUserId} onChange={setPreviewUserId} />
+                  <VisionPreviewPicker members={state.members} tokens={scene.tokens} value={visionPreview ? previewKey : null} onChange={setPreviewKey} />
                 )}
                 {tool === 'template' && (
                   <TemplateOptions
@@ -521,7 +537,16 @@ export function Campaign({ user }: { user: User }) {
               />
             </div>
           )}
-          {isGm && state.scene && state.scene.id !== state.activeSceneId && (
+          {visionPreview ? (
+            <div className="map-banner map-banner--preview" role="status">
+              <span>
+                {visionPreview.kind === 'player' ? `Viewing as ${previewName}: only what they can see is shown` : `Seeing through ${previewName}`}
+              </span>
+              <button type="button" className="btn btn--sm" onClick={() => setPreviewKey(null)}>
+                GM view
+              </button>
+            </div>
+          ) : isGm && state.scene && state.scene.id !== state.activeSceneId && (
             <div className="map-banner">
               <span>Preparing: players can't see this scene</span>
               <button type="button" className="btn btn--sm btn--primary" onClick={() => send({ type: 'scene:activate', sceneId: state.scene!.id })}>

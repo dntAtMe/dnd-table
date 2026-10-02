@@ -4,22 +4,75 @@ import { useMemo } from 'react';
 
 interface Props {
   scene: SceneView;
-  /** The map as drawn (with the GM's unsent edits), so lighting follows walls straight away. */
-  map: MapData;
   geo: GridGeometry;
   size: number;
   isGm: boolean;
   /** Current zoom, for constant-width outlines. */
   k: number;
   clipPath: string;
-  /** GM only: show what this player's tokens see, as the server would. */
-  preview?: VisionPreview | null;
+  /** GM: light levels over the scene (see useGmLight). */
+  gmLight: GmLight | null;
+  /** GM: what the previewed player or token sees (see usePreviewSight). */
+  previewSight?: PreviewSight | null;
 }
 
-export interface VisionPreview {
-  userId: string;
-  /** Darkvision a token gets from its character sheet. */
-  darkvision: (token: Token) => number;
+/**
+ * GM only: see the scene through someone else's eyes, as the server would show it. A player's
+ * view uses all their tokens and hides what players can't see; a token's view is that one
+ * creature's sight (any token, e.g. to check what a goblin can see).
+ */
+export type VisionPreview = { kind: 'player'; userId: string; darkvision: (token: Token) => number } | { kind: 'token'; tokenId: string; darkvision: (token: Token) => number };
+
+export interface GmLight {
+  sight: SightMap;
+  level: Uint8Array;
+}
+
+export interface PreviewSight {
+  visible: FogMask;
+  dim: FogMask;
+}
+
+/** GM: light levels worked out with the same rules the server uses, from the map as drawn. */
+export function useGmLight(scene: SceneView, map: MapData, isGm: boolean): GmLight | null {
+  const { vision } = scene;
+  const fpc = scene.grid.feetPerCell;
+  const lights = useMemo(() => (isGm ? scene.tokens.filter((t) => t.light && t.light.bright + t.light.dim > 0) : []), [isGm, scene.tokens]);
+  return useMemo(() => {
+    if (!isGm || !vision.enabled) return null;
+    const sight = new SightMap(map);
+    const emitters = lights.map((t) => ({ col: t.col, row: t.row, size: t.size, bright: t.light!.bright, dim: t.light!.dim }));
+    return { sight, level: illuminate(sight, vision.lighting, emitters, fpc) };
+  }, [isGm, vision.enabled, vision.lighting, map, lights, fpc]);
+}
+
+/** The tokens a preview looks through. */
+export function previewEyes(tokens: Token[], preview: VisionPreview): Token[] {
+  return preview.kind === 'player' ? tokens.filter((t) => t.ownerUserId === preview.userId) : tokens.filter((t) => t.id === preview.tokenId);
+}
+
+/** What the previewed player's tokens (or the one token) see together. */
+export function usePreviewSight(scene: SceneView, geo: GridGeometry, gmLight: GmLight | null, preview: VisionPreview | null | undefined): PreviewSight | null {
+  const fpc = scene.grid.feetPerCell;
+  return useMemo(() => {
+    if (!gmLight || !preview) return null;
+    const fields = previewEyes(scene.tokens, preview).map((t) =>
+      viewField(
+        gmLight.sight,
+        gmLight.level,
+        {
+          col: t.col,
+          row: t.row,
+          size: t.size,
+          darkvision: t.senses?.darkvision ?? preview.darkvision(t),
+          blindsight: t.senses?.blindsight ?? 0,
+          truesight: t.senses?.truesight ?? 0,
+        },
+        fpc,
+      ),
+    );
+    return mergeFields(geo.cols, geo.rows, fields);
+  }, [gmLight, preview, scene.tokens, geo.cols, geo.rows, fpc]);
 }
 
 /** SVG path covering every cell for which `test(index)` holds, merged into horizontal runs. */
@@ -47,18 +100,14 @@ function cellsPath(geo: GridGeometry, size: number, test: (i: number) => boolean
  * black under the fog), cells seen only in dim light slightly. The GM sees everything, with the
  * light levels lightly shaded and each light's bright and dim reach outlined.
  */
-export function VisionLayer({ scene, map, geo, size, isGm, k, clipPath, preview }: Props) {
+export function VisionLayer({ scene, geo, size, isGm, k, clipPath, gmLight, previewSight }: Props) {
   const { vision, visible, dim } = scene;
   const fpc = scene.grid.feetPerCell;
-
-  const lights = useMemo(() => (isGm ? scene.tokens.filter((t) => t.light && t.light.bright + t.light.dim > 0) : []), [isGm, scene.tokens]);
-  /** GM: light levels worked out here with the same rules the server uses. */
-  const gmLight = useMemo(() => {
-    if (!isGm || !vision.enabled) return null;
-    const sight = new SightMap(map);
-    const emitters = lights.map((t) => ({ col: t.col, row: t.row, size: t.size, bright: t.light!.bright, dim: t.light!.dim }));
-    return { sight, level: illuminate(sight, vision.lighting, emitters, fpc) };
-  }, [isGm, vision.enabled, vision.lighting, map, lights, fpc]);
+  // Light reach outlines are a GM aid; a preview shows the scene as the player gets it.
+  const lights = useMemo(
+    () => (isGm && !previewSight ? scene.tokens.filter((t) => t.light && t.light.bright + t.light.dim > 0) : []),
+    [isGm, previewSight, scene.tokens],
+  );
 
   const playerPaths = useMemo(() => {
     const bit = (m: FogMask, i: number) => (m.bits[i >> 3]! & (1 << (i & 7))) !== 0;
@@ -66,38 +115,19 @@ export function VisionLayer({ scene, map, geo, size, isGm, k, clipPath, preview 
       unseen: cellsPath(geo, size, (i) => !bit(seen, i)),
       dim: cellsPath(geo, size, (i) => bit(dimMask, i)),
     });
-    if (gmLight && preview) {
-      const eyes = scene.tokens.filter((t) => t.ownerUserId === preview.userId);
-      const fields = eyes.map((t) =>
-        viewField(
-          gmLight.sight,
-          gmLight.level,
-          {
-            col: t.col,
-            row: t.row,
-            size: t.size,
-            darkvision: t.senses?.darkvision ?? preview.darkvision(t),
-            blindsight: t.senses?.blindsight ?? 0,
-            truesight: t.senses?.truesight ?? 0,
-          },
-          fpc,
-        ),
-      );
-      const merged = mergeFields(geo.cols, geo.rows, fields);
-      return paths(merged.visible, merged.dim);
-    }
+    if (previewSight) return paths(previewSight.visible, previewSight.dim);
     if (isGm || !vision.enabled || visible === undefined) return null;
     return paths(FogMask.decode(visible, geo.cols, geo.rows), FogMask.decode(dim ?? '', geo.cols, geo.rows));
-  }, [isGm, vision.enabled, visible, dim, geo, size, gmLight, preview, scene.tokens, fpc]);
+  }, [isGm, vision.enabled, visible, dim, geo, size, previewSight]);
 
   const gmPaths = useMemo(() => {
-    if (!gmLight || preview || vision.lighting === 'bright') return null;
+    if (!gmLight || previewSight || vision.lighting === 'bright') return null;
     const { level } = gmLight;
     return {
       dark: cellsPath(geo, size, (i) => level[i]! < DIM),
       dim: cellsPath(geo, size, (i) => level[i] === DIM),
     };
-  }, [gmLight, preview, vision.lighting, geo, size]);
+  }, [gmLight, previewSight, vision.lighting, geo, size]);
 
   if (!playerPaths && !gmPaths && lights.length === 0) return null;
   return (

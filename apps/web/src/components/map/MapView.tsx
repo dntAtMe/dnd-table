@@ -25,7 +25,7 @@ import { fitRect, screenToMap, visibleRect, zoomAt, type Camera } from './camera
 import { fogPath } from './fogPath';
 import { TerrainLayer, TerrainPatterns, WallLayer } from './MapFeatures';
 import { TemplateLayer, type TemplateSettings } from './TemplateLayer';
-import { VisionLayer, type VisionPreview } from './VisionLayer';
+import { VisionLayer, previewEyes, useGmLight, usePreviewSight, type VisionPreview } from './VisionLayer';
 import { edgeKey, edgesBetween, nearestEdge, nearestVertex, parseEdgeKey, type Vertex } from './wallPath';
 
 export type MapTool = 'move' | 'reveal' | 'hide' | 'ruler' | 'ping' | 'wall' | 'door' | 'terrain' | 'erase' | 'template';
@@ -66,7 +66,7 @@ export interface MapViewProps {
   onTemplate?: (msg: TemplateMessage) => void;
   /** Overlay controls drawn above the map (toolbars). */
   children?: ReactNode;
-  /** GM only: preview what one player's tokens see. */
+  /** GM only: see the map as one player (or through one token) sees it. */
   visionPreview?: VisionPreview | null;
   /** Quick actions shown next to the selected token (hidden while it's dragged). */
   tokenPopup?: (token: Token) => ReactNode;
@@ -310,6 +310,31 @@ export function MapView({
     for (const i of terrainStroke?.cells ?? []) copy.terrain[i] = terrainStroke!.code;
     return copy;
   }, [serverMap, edgeEdits, terrainStroke]);
+
+  // GM preview: the scene through a player's (or one token's) eyes, filtered as the server would.
+  const gmLight = useGmLight(scene, map, isGm);
+  const previewSight = usePreviewSight(scene, geo, gmLight, visionPreview);
+  const previewPlayer = previewSight && visionPreview?.kind === 'player' ? visionPreview.userId : null;
+  /** A player's fog: what they've explored, plus what they see right now. */
+  const shownFog = useMemo(() => {
+    if (!previewPlayer || !fog || !previewSight) return fog;
+    const copy = new FogMask(fog.cols, fog.rows, fog.bits.slice());
+    for (let i = 0; i < copy.bits.length; i++) copy.bits[i]! |= previewSight.visible.bits[i] ?? 0;
+    return copy;
+  }, [previewPlayer, fog, previewSight]);
+  const shownFogD = useMemo(() => (shownFog === fog ? fogD : shownFog ? fogPath(shownFog, geo, grid.size) : ''), [shownFog, fog, fogD, geo, grid.size]);
+  /** Walls as the player gets them: secret doors are plain walls, nothing under the fog. */
+  const shownMap = useMemo(() => (previewPlayer ? map.forPlayers(shownFog ?? undefined) : map), [previewPlayer, map, shownFog]);
+  const shownTokens = useMemo(() => {
+    if (!previewSight || !visionPreview) return scene.tokens;
+    const eyes = new Set(previewEyes(scene.tokens, visionPreview).map((t) => t.id));
+    return scene.tokens.filter(
+      (t) =>
+        eyes.has(t.id) ||
+        (previewPlayer !== null && t.ownerUserId === previewPlayer) ||
+        (!(previewPlayer !== null && t.hidden) && previewSight.visible.anyRevealed(t.col, t.row, t.size)),
+    );
+  }, [scene.tokens, previewSight, visionPreview, previewPlayer]);
 
   const fullMap: CameraRect = { x: 0, y: 0, w: scene.width, h: scene.height };
   const minZoom = size ? Math.min(size.width / scene.width, size.height / scene.height) * 0.5 : 0.05;
@@ -726,11 +751,14 @@ export function MapView({
     `${m.feet} ft${m.cost !== m.feet ? ` (${m.cost} ft move)` : ''}${m.block ? ` · ${m.block === 'wall' ? 'blocked' : 'impassable'}` : ''}`;
   const transform = cam ? `translate(${cam.x}px, ${cam.y}px) scale(${cam.k})` : undefined;
   /** Templates as shown: the one being edited replaced by its draft, Emanations following dragged tokens. */
-  const shownTemplates = scene.templates.map((t) => {
-    if (t.id === templateDraft?.id) return templateDraft;
-    const pos = drag && t.tokenId === drag.tokenId ? cellOf(drag.x, drag.y) : t.tokenId ? pending[t.tokenId] : undefined;
-    return pos ? { ...t, x: pos.col, y: pos.row } : t;
-  });
+  const shownIds = new Set(shownTokens.map((t) => t.id));
+  const shownTemplates = scene.templates
+    .filter((t) => !previewPlayer || (!t.hidden && (!t.tokenId || shownIds.has(t.tokenId))))
+    .map((t) => {
+      if (t.id === templateDraft?.id) return templateDraft;
+      const pos = drag && t.tokenId === drag.tokenId ? cellOf(drag.x, drag.y) : t.tokenId ? pending[t.tokenId] : undefined;
+      return pos ? { ...t, x: pos.col, y: pos.row } : t;
+    });
   if (templateDraft?.id === DRAFT_TEMPLATE) shownTemplates.push(templateDraft);
   const terrainId = `terrain-${scene.id}`;
   const popupToken = interactive && tokenPopup && cam && drag?.tokenId !== selectedTokenId ? scene.tokens.find((t) => t.id === selectedTokenId) : undefined;
@@ -777,16 +805,16 @@ export function MapView({
             ) : (
               <rect width={scene.width} height={scene.height} className="map__blank" />
             )}
-            <TerrainLayer map={map} geo={geo} size={grid.size} id={terrainId} />
+            <TerrainLayer map={shownMap} geo={geo} size={grid.size} id={terrainId} />
             {grid.visible && <rect width={scene.width} height={scene.height} fill={`url(#grid-${scene.id})`} pointerEvents="none" />}
-            <WallLayer map={map} geo={geo} size={grid.size} />
-            {fog && (
-              <path d={fogD} className={`map__fog${isGm ? ' map__fog--gm' : ''}`} clipPath={`url(#clip-${scene.id})`} pointerEvents="none" />
+            <WallLayer map={shownMap} geo={geo} size={grid.size} />
+            {shownFog && (
+              <path d={shownFogD} className={`map__fog${isGm && !previewPlayer ? ' map__fog--gm' : ''}`} clipPath={`url(#clip-${scene.id})`} pointerEvents="none" />
             )}
-            <VisionLayer scene={scene} map={map} geo={geo} size={grid.size} isGm={isGm} k={k} clipPath={`url(#clip-${scene.id})`} preview={visionPreview} />
+            <VisionLayer scene={scene} geo={geo} size={grid.size} isGm={isGm} k={k} clipPath={`url(#clip-${scene.id})`} gmLight={gmLight} previewSight={previewSight} />
             <TemplateLayer
               templates={shownTemplates}
-              tokens={scene.tokens}
+              tokens={shownTokens}
               geo={geo}
               cell={grid.size}
               feetPerCell={grid.feetPerCell}
@@ -805,7 +833,7 @@ export function MapView({
                 strokeWidth={2 / k}
               />
             )}
-            {scene.tokens.map((t) => {
+            {shownTokens.map((t) => {
               const dragging = drag?.tokenId === t.id;
               const pos = pending[t.id] ?? t;
               return (
@@ -827,7 +855,7 @@ export function MapView({
             <TemplateLayer
               overlay
               templates={shownTemplates}
-              tokens={scene.tokens}
+              tokens={shownTokens}
               geo={geo}
               cell={grid.size}
               feetPerCell={grid.feetPerCell}
