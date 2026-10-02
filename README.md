@@ -133,9 +133,11 @@ The database migrates itself on start-up (`PRAGMA user_version`).
 
 All rules content (classes, subclasses, species, backgrounds, feats, equipment, 339 spells,
 341 monsters, 262 magic items, conditions and more) comes from the System Reference Document 5.2,
-via the 2024 dataset of [5e-database](https://github.com/5e-bits/5e-database).
-`scripts/import-srd.mjs` reads it at a pinned commit and writes normalised JSON to
-`packages/rules/src/srd/data`, so the data is reproducible and reviewable:
+via the 2024 dataset of [5e-database](https://github.com/5e-bits/5e-database). The rules glossary
+(Advantage, Cover, Opportunity Attacks and 137 more) comes from the SRD 5.2.1, via
+[dnd-5e-srd-markdown](https://github.com/downfallx/dnd-5e-srd-markdown), checked against the official
+PDF. `scripts/import-srd.mjs` reads both at pinned commits (the glossary also by SHA-256) and writes
+normalised JSON to `packages/rules/src/srd/data`, so the data is reproducible and reviewable:
 
 ```bash
 pnpm import:srd    # same commit → byte-identical output
@@ -151,6 +153,11 @@ it.
 > This work includes material from the System Reference Document 5.2 ("SRD 5.2") by Wizards of the
 > Coast LLC, available at https://www.dndbeyond.com/srd. The SRD 5.2 is licensed under the Creative
 > Commons Attribution 4.0 International License, available at
+> https://creativecommons.org/licenses/by/4.0/legalcode.
+>
+> This work includes material from the System Reference Document 5.2.1 ("SRD 5.2.1") by Wizards of
+> the Coast LLC, available at https://www.dndbeyond.com/srd. The SRD 5.2.1 is licensed under the
+> Creative Commons Attribution 4.0 International License, available at
 > https://creativecommons.org/licenses/by/4.0/legalcode.
 
 ## Licence

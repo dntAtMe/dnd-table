@@ -211,13 +211,22 @@ it. Right-drag or two fingers still pan while painting.
 table screens show what the whole party sees.
 
 - Walls, closed doors and solid rock block sight. Creatures out of sight never reach players' devices.
-- Give tokens light sources (candle, torch, lamp, hooded lantern, *Light*, *Daylight* or custom) and
-  senses under **Edit token**. Character tokens take darkvision from the sheet.
+- Give tokens light sources (candle, torch, lamp, hooded lantern, light spells or custom) and senses
+  under **Edit token**. Character tokens take darkvision from the sheet; monsters placed from the
+  combat tracker take theirs from the stat block, and **Use … senses** copies them onto older tokens.
+- Light spells the caster carries (*Light*, *Dancing Lights*, *Produce Flame*, *Flame Blade*,
+  *Continual Flame*, *Daylight*, *Fire Shield*, *Sunbeam*) have a **Light token** button in the
+  sheet's spell list that lights the character's token on the map; **Put out** ends it.
 - 2024 rules: dim light is lightly obscured, darkness heavily obscured. Darkvision sees dim light as
   bright and darkness as dim within its range; blindsight and truesight ignore light within theirs.
 - **Dynamic fog** reveals whatever players see, so explored areas stay mapped (dimmed).
-- You see everything, with light levels shaded and each light's reach outlined. Pick **As <player>**
-  in the toolbar to preview exactly what that player sees.
+- You see everything, with light levels shaded and each light's reach outlined.
+- **Preview someone's view** from the dropdown in the Play toolbar:
+  - **As <player>** shows the map exactly as that player's screen does: what their tokens see,
+    their fog, secret doors as plain walls, and only the creatures they can see.
+  - **Through <token>** shows what one creature sees, e.g. whether the goblin by the door can see
+    the rogue.
+  - A banner shows whose view you're in; **GM view** goes back.
 
 ### Combat
 
@@ -297,7 +306,9 @@ is in its top-right corner.
 ![Nested knowledge base popups](screenshots/knowledge-base.png)
 
 Every spell, monster, condition, item, class, feat, rule and campaign page is a link wherever it's
-mentioned: sheets, stat blocks, the tracker, the log, handouts and the wiki. Each entry also lists
+mentioned: sheets, stat blocks, the tracker, the log, handouts and the wiki. The rules include the
+whole SRD glossary, so terms like Advantage, Cover, Difficult Terrain, Opportunity Attack or "the
+Dash action" open their rules. Each entry also lists
 related entries worked out from the SRD: which spells deal Fire damage, which creatures resist it,
 what protects against it, which weapons have a property, who casts a spell.
 

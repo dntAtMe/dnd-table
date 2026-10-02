@@ -22,7 +22,11 @@ laptop, player phones and a TV.
   movement blocked by walls and solid rock.
 - Fog of war painted with a brush; table screens can follow the GM's camera.
 - Lighting and token vision: scene light levels, light sources, darkvision, blindsight and
-  truesight, line of sight through walls and doors, optional dynamic fog, and a per-player preview.
+  truesight, line of sight through walls and doors, and optional dynamic fog. Monster tokens see with
+  their stat block's senses, and light spells (Light, Daylight, Produce Flame…) light the caster's
+  token from the sheet.
+- A GM preview of the map as any player sees it (only the creatures they can see, their fog, secret
+  doors as walls) or through any single token.
 - Area templates (cone, cube, cylinder, emanation, line, sphere) with the 2024 coverage rule and spell
   areas read from the SRD.
 
@@ -47,6 +51,6 @@ laptop, player phones and a TV.
 ### Knowledge base
 
 - The SRD 5.2 (classes, species, backgrounds, feats, equipment, 339 spells, 341 monsters, 262 magic
-  items, rules terms) imported reproducibly from a pinned dataset.
+  items, rules terms) and the SRD 5.2.1 rules glossary, imported reproducibly from pinned sources.
 - Every name is a link, with nested hover popups you can pin and move, a searchable Compendium,
   Ctrl/⌘ K quick search and related entries worked out from the data.
