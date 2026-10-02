@@ -1,6 +1,8 @@
 import type { CharacterRecord, ClientMessage, Member, Token } from '@dnd/protocol';
-import { LIGHT_PRESETS, computeCharacter, lightPreset, type LightPresetId, type LightSource, type TokenSenses } from '@dnd/rules';
+import { LIGHT_PRESETS, computeCharacter, lightPreset, monsterSenses, monsterSensesText, type LightPresetId, type LightSource, type TokenSenses } from '@dnd/rules';
 import { useEffect, useState } from 'react';
+import { useKnowledge } from '../lib/knowledge';
+import { monsterIdForName } from './combat/monsterForToken';
 
 type Send = (msg: ClientMessage) => void;
 
@@ -105,7 +107,31 @@ export function TokenVisionFields({ token, characters, send }: { token: Token; c
         <span>Truesight (ft)</span>
         <FeetInput label="Truesight" value={senses.truesight} placeholder="0" onCommit={(v) => setSense('truesight', v)} />
       </label>
+      {!character && <StatBlockSenses token={token} send={send} />}
     </fieldset>
+  );
+}
+
+/** For a token named after an SRD monster: copy the stat block's senses when they differ. */
+function StatBlockSenses({ token, send }: { token: Token; send: Send }) {
+  const { compendium, lazyData } = useKnowledge();
+  const id = monsterIdForName(compendium, token.name);
+  const monster = id ? lazyData?.monsters[id] : undefined;
+  if (!monster) return null;
+  const wanted = monsterSenses(monster);
+  const have = token.senses ?? {};
+  const same = (['darkvision', 'blindsight', 'truesight'] as const).every((k) => (have[k] ?? 0) === (wanted[k] ?? 0));
+  if (same) return null;
+  const text = monsterSensesText({ senses: monster.senses, passivePerception: monster.passivePerception }).replace(/, Passive Perception \d+$|^Passive Perception \d+$/, '') || 'no special senses';
+  return (
+    <button
+      type="button"
+      className="btn btn--sm"
+      onClick={() => send({ type: 'vision:token', tokenId: token.id, senses: { darkvision: wanted.darkvision ?? 0, blindsight: wanted.blindsight, truesight: wanted.truesight } })}
+      title={`${monster.name}: ${text}`}
+    >
+      Use {monster.name}'s senses ({text})
+    </button>
   );
 }
 

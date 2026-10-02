@@ -13,7 +13,6 @@ import {
   formatCr,
   monsterSave,
   monsterSkill,
-  type Compendium,
   type ConditionId,
   type D20Mode,
   type MonsterDef,
@@ -25,6 +24,7 @@ import { characterSubtitle } from '../character/CharacterSheet';
 import { signed, useCharacter, type CharacterActions } from '../character/useCharacter';
 import { StatsEditor } from '../combat/InitiativeTracker';
 import { STATUS_LABEL } from '../combat/InitiativeStrip';
+import { monsterIdForName } from '../combat/monsterForToken';
 import { ActionEntry, useMonsterRolls } from '../combat/StatBlock';
 import { useMonsters } from '../combat/useMonsters';
 import { EntityLink, MaybeLink } from '../knowledge/EntityLink';
@@ -56,12 +56,6 @@ export interface TokenActionsProps {
 /** The combatant a token stands for: by token, or by the character it represents. */
 export function combatantFor(combat: CombatView | null, token: Token): CombatantView | undefined {
   return combat?.combatants.find((c) => c.tokenId === token.id || (c.characterId !== null && c.characterId === token.characterId));
-}
-
-/** The SRD monster a token is named after ("Goblin Warrior 2" → goblin-warrior). */
-export function monsterIdForName(compendium: Compendium, name: string): string | undefined {
-  const entry = compendium.byName(name.replace(/\s*#?\d+$/, '').trim(), 'monster');
-  return entry?.kind === 'monster' ? entry.id : undefined;
 }
 
 /**

@@ -1,6 +1,7 @@
 import type { CharacterRecord, ClientMessage, Member, SceneView, Token } from '@dnd/protocol';
 import { useEffect, useState } from 'react';
 import { useKnowledge } from '../lib/knowledge';
+import { monsterIdForName } from './combat/monsterForToken';
 import { EntityLink } from './knowledge/EntityLink';
 import { TokenVisionFields } from './TokenVision';
 
@@ -26,12 +27,12 @@ interface InspectorProps {
 /** A link to the SRD monster a token is named after ("Goblin Warrior 2" → Goblin Warrior). */
 function TokenReference({ name }: { name: string }) {
   const { compendium } = useKnowledge();
-  const base = name.replace(/\s*#?\d+$/, '').trim();
-  const entry = compendium.byName(base, 'monster');
-  if (!entry || entry.kind !== 'monster') return null;
+  const id = monsterIdForName(compendium, name);
+  const entry = id ? compendium.get({ kind: 'monster', id }) : undefined;
+  if (!id || !entry) return null;
   return (
     <p className="hint">
-      Stat block: <EntityLink entry={{ kind: 'monster', id: entry.id }}>{entry.name}</EntityLink>
+      Stat block: <EntityLink entry={{ kind: 'monster', id }}>{entry.name}</EntityLink>
     </p>
   );
 }
