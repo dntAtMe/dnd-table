@@ -88,6 +88,18 @@ function rulesBody(group: RulesGroup): EntryRenderer {
   };
 }
 
+/** A Rules Glossary entry: its kind of rule (Action, Hazard…) and the full text. */
+function RuleBody({ entry }: EntryRendererProps) {
+  const rule = RULES_TEXT.glossary.find((g) => g.id === entry.id);
+  if (!rule) return null;
+  return (
+    <>
+      {rule.tag && <Facts rows={[['Type', rule.tag]]} />}
+      <Prose text={rule.description} entry={entry} />
+    </>
+  );
+}
+
 function MasteryBody({ entry }: EntryRendererProps) {
   const weapons = Object.values(WEAPONS).filter((w) => w.mastery === entry.id);
   return (
@@ -648,7 +660,8 @@ export const BUILTIN_BODIES: Partial<Record<EntryKind, EntryRenderer>> = {
   weapon: WeaponBody,
   armor: ArmorBody,
   gear: GearBody,
+  rule: RuleBody,
 };
 
 /** Kinds whose header summary is just a restatement of the body (rules text): don't show it twice. */
-export const SUMMARY_IN_BODY = new Set<EntryKind>(['condition', 'mastery', 'property', 'trait', 'alignment']);
+export const SUMMARY_IN_BODY = new Set<EntryKind>(['condition', 'mastery', 'property', 'trait', 'alignment', 'rule']);

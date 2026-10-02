@@ -4,6 +4,7 @@ import { KIND_LABELS, type EntryKind } from '@dnd/rules';
 const KIND_GROUP: Record<EntryKind, 'page' | 'rules' | 'magic' | 'creature' | 'item' | 'character'> = {
   page: 'page',
   condition: 'rules',
+  rule: 'rules',
   mastery: 'rules',
   property: 'rules',
   skill: 'rules',
